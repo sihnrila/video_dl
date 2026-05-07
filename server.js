@@ -398,6 +398,34 @@ app.get('/api/channel-clips', async (req, res) => {
   }
 })
 
+// PIN store: 6자리 숫자 → { nidAut, nidSes, expiresAt }
+const pinStore = new Map()
+setInterval(() => {
+  const now = Date.now()
+  for (const [pin, data] of pinStore) {
+    if (data.expiresAt < now) pinStore.delete(pin)
+  }
+}, 300000)
+
+app.post('/api/pin/create', (req, res) => {
+  const { nidAut, nidSes } = req.body
+  if (!nidAut || !nidSes) return res.status(400).json({ error: '쿠키를 먼저 입력해주세요.' })
+  const pin = String(Math.floor(100000 + Math.random() * 900000))
+  pinStore.set(pin, { nidAut: cleanCookieValue(nidAut), nidSes: cleanCookieValue(nidSes), expiresAt: Date.now() + 3600000 })
+  res.json({ pin })
+})
+
+app.post('/api/pin/load', (req, res) => {
+  const pin = String(req.body.pin || '').trim()
+  const data = pinStore.get(pin)
+  if (!data || data.expiresAt < Date.now()) {
+    pinStore.delete(pin)
+    return res.status(404).json({ error: '코드가 없거나 만료되었습니다. (유효시간 1시간)' })
+  }
+  pinStore.delete(pin)
+  res.json({ nidAut: data.nidAut, nidSes: data.nidSes })
+})
+
 app.post('/api/check-cookie', async (req, res) => {
   const { nidAut = '', nidSes = '' } = req.body
   if (!nidAut || !nidSes) return res.status(400).json({ valid: false, message: '쿠키를 입력해주세요.' })

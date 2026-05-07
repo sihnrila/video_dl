@@ -89,6 +89,72 @@ function App() {
         });
     };
 
+    // PIN / QR 공유
+    const [pin, setPin] = useState('');
+    const [pinLoading, setPinLoading] = useState(false);
+    const [showShare, setShowShare] = useState(false);
+
+    const [pinInput, setPinInput] = useState('');
+    const [pinLoadMsg, setPinLoadMsg] = useState('');
+    const [pinLoadLoading, setPinLoadLoading] = useState(false);
+
+    const generatePin = async () => {
+        if (!hasCookie) return;
+        setPinLoading(true);
+        try {
+            const res = await fetch('/api/pin/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ nidAut, nidSes })
+            });
+            const data = await res.json();
+            if (data.pin) { setPin(data.pin); setShowShare(true); }
+        } catch {}
+        setPinLoading(false);
+    };
+
+    const loadPin = async () => {
+        const code = pinInput.trim();
+        if (code.length !== 6) return setPinLoadMsg('6자리 코드를 입력해주세요.');
+        setPinLoadLoading(true);
+        setPinLoadMsg('');
+        try {
+            const res = await fetch('/api/pin/load', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pin: code })
+            });
+            const data = await res.json();
+            if (res.ok && data.nidAut) {
+                setNidAut(data.nidAut);
+                setNidSes(data.nidSes);
+                setPinInput('');
+                setCookieSavedNotice(true);
+                setTimeout(() => setCookieSavedNotice(false), 4000);
+                setPinLoadMsg('');
+            } else {
+                setPinLoadMsg(data.error || '코드를 불러오지 못했습니다.');
+            }
+        } catch {
+            setPinLoadMsg('오류가 발생했습니다.');
+        }
+        setPinLoadLoading(false);
+    };
+
+    const qrUrl = pin
+        ? `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(window.location.origin + '/?pin=' + pin)}&bgcolor=0b0e14&color=00ffa3&format=svg`
+        : '';
+
+    // URL 파라미터로 PIN 전달된 경우 자동 로드
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const urlPin = params.get('pin');
+        if (urlPin && urlPin.length === 6) {
+            setPinInput(urlPin);
+            history.replaceState(null, '', window.location.pathname);
+        }
+    }, []);
+
     const isClip = url.includes('/clips/');
 
     useEffect(() => {
@@ -273,6 +339,45 @@ function App() {
                             </div>
                         </div>
                     </div>
+                </div>
+
+                {/* PIN / QR 공유 섹션 */}
+                <div className="share-section">
+                    {hasCookie ? (
+                        <div>
+                            <button className="share-toggle-btn" onClick={generatePin} disabled={pinLoading}>
+                                {pinLoading ? '⏳ 코드 생성 중...' : '📲 모바일로 공유 (PIN · QR)'}
+                            </button>
+                            {showShare && pin && (
+                                <div className="share-box">
+                                    <div className="share-pin-label">6자리 공유 코드 <span className="share-ttl">(1시간 유효 · 1회용)</span></div>
+                                    <div className="share-pin">{pin}</div>
+                                    <div className="share-qr">
+                                        <img src={qrUrl} alt="QR 코드" width="150" height="150" />
+                                        <p className="share-qr-hint">QR 스캔 → 자동 입력</p>
+                                    </div>
+                                    <p className="share-hint">모바일에서 코드를 입력하거나 QR을 스캔하세요</p>
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="pin-input-row">
+                            <input
+                                className="pin-input"
+                                type="text"
+                                inputMode="numeric"
+                                maxLength={6}
+                                placeholder="PC에서 받은 6자리 코드"
+                                value={pinInput}
+                                onChange={e => { setPinInput(e.target.value.replace(/\D/g, '')); setPinLoadMsg(''); }}
+                                onKeyDown={e => e.key === 'Enter' && loadPin()}
+                            />
+                            <button className="pin-load-btn" onClick={loadPin} disabled={pinLoadLoading || pinInput.length !== 6}>
+                                {pinLoadLoading ? '⏳' : '불러오기'}
+                            </button>
+                        </div>
+                    )}
+                    {pinLoadMsg && <div className="pin-error">{pinLoadMsg}</div>}
                 </div>
 
                 <div className="tab-bar">
