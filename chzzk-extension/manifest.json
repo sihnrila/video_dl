@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "CHZZK Downloader",
+  "version": "1.0.0",
+  "description": "치지직 VOD·클립 다운로더 + 채널 구독자 클립 목록",
+  "permissions": ["activeTab", "cookies", "downloads", "storage"],
+  "host_permissions": [
+    "https://chzzk.naver.com/*",
+    "https://api.chzzk.naver.com/*",
+    "https://api-videohub.naver.com/*",
+    "http://localhost:5555/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "CHZZK Downloader"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://chzzk.naver.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "icon.png",
+    "48": "icon.png",
+    "128": "icon.png"
+  }
+}

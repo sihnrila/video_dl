@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>CHZZK DL</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 380px;
+      min-height: 200px;
+      background: #0b0e14;
+      color: #fff;
+      font-family: -apple-system, 'Segoe UI', sans-serif;
+      font-size: 13px;
+    }
+
+    /* Header */
+    .header {
+      background: linear-gradient(135deg, #1a1f2e, #0f1420);
+      border-bottom: 1px solid rgba(0,255,163,0.2);
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .logo { font-size: 18px; font-weight: 700; color: #00ffa3; letter-spacing: -0.5px; }
+    .subtitle { font-size: 11px; color: #64748b; }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      background: #0f1420;
+    }
+    .tab {
+      flex: 1;
+      padding: 9px;
+      text-align: center;
+      cursor: pointer;
+      color: #64748b;
+      font-size: 12px;
+      font-weight: 500;
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+    }
+    .tab.active { color: #00ffa3; border-bottom-color: #00ffa3; }
+    .tab:hover:not(.active) { color: #94a3b8; }
+
+    /* Content */
+    .panel { display: none; padding: 14px 16px; }
+    .panel.active { display: block; }
+
+    /* Auth badge */
+    .auth-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 10px;
+      border-radius: 8px;
+      font-size: 11px;
+      margin-bottom: 12px;
+    }
+    .auth-badge.ok { background: rgba(0,255,163,0.08); color: #00ffa3; border: 1px solid rgba(0,255,163,0.2); }
+    .auth-badge.fail { background: rgba(239,68,68,0.08); color: #ef4444; border: 1px solid rgba(239,68,68,0.2); }
+    .auth-dot { width: 7px; height: 7px; border-radius: 50%; }
+    .auth-dot.ok { background: #00ffa3; }
+    .auth-dot.fail { background: #ef4444; }
+
+    /* Page info card */
+    .page-card {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+    .page-type {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+    .page-type.clip { color: #a78bfa; }
+    .page-type.vod { color: #00ffa3; }
+    .page-type.live { color: #ef4444; }
+    .page-type.channel { color: #60a5fa; }
+
+    .live-status-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .live-status-badge.on { background: rgba(239,68,68,0.15); color: #ef4444; border: 1px solid rgba(239,68,68,0.3); }
+    .live-status-badge.off { background: rgba(100,116,139,0.15); color: #64748b; border: 1px solid rgba(100,116,139,0.3); }
+
+    .btn-record {
+      background: linear-gradient(135deg, #ef4444, #dc2626);
+      color: white;
+    }
+    .btn-record:hover:not(:disabled) { filter: brightness(1.1); }
+    .btn-record:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-stop {
+      background: rgba(239,68,68,0.15);
+      border: 1px solid rgba(239,68,68,0.4);
+      color: #ef4444;
+    }
+    .btn-stop:hover:not(:disabled) { background: rgba(239,68,68,0.25); }
+    .page-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #e2e8f0;
+      margin-bottom: 4px;
+      line-height: 1.4;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .page-meta { font-size: 11px; color: #64748b; }
+
+    .thumbnail {
+      width: 100%;
+      border-radius: 8px;
+      margin-bottom: 10px;
+      max-height: 120px;
+      object-fit: cover;
+      display: none;
+    }
+    .thumbnail.loaded { display: block; }
+
+    /* Quality selector */
+    .row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+    label.field-label { font-size: 11px; color: #64748b; min-width: 50px; }
+    select, .quality-select {
+      flex: 1;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 7px;
+      color: #e2e8f0;
+      padding: 6px 8px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    select:focus { outline: none; border-color: #00ffa3; }
+
+    /* Buttons */
+    .btn {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 9px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-bottom: 6px;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #00ffa3, #00cc82);
+      color: #0b0e14;
+    }
+    .btn-primary:hover { filter: brightness(1.1); }
+    .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-secondary {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+      color: #94a3b8;
+    }
+    .btn-secondary:hover { background: rgba(255,255,255,0.1); }
+
+    /* Streams available */
+    .streams-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-bottom: 10px;
+    }
+    .stream-badge {
+      background: rgba(139,92,246,0.15);
+      border: 1px solid rgba(139,92,246,0.3);
+      border-radius: 5px;
+      padding: 2px 7px;
+      font-size: 10px;
+      color: #a78bfa;
+    }
+
+    /* Status */
+    .status-bar {
+      padding: 8px 10px;
+      border-radius: 8px;
+      font-size: 12px;
+      margin-top: 8px;
+      display: none;
+    }
+    .status-bar.info { background: rgba(96,165,250,0.1); color: #60a5fa; border: 1px solid rgba(96,165,250,0.2); }
+    .status-bar.ok { background: rgba(0,255,163,0.08); color: #00ffa3; border: 1px solid rgba(0,255,163,0.2); }
+    .status-bar.err { background: rgba(239,68,68,0.08); color: #ef4444; border: 1px solid rgba(239,68,68,0.2); }
+
+    /* VOD Command */
+    .cmd-box {
+      background: rgba(0,0,0,0.4);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-family: 'SF Mono', monospace;
+      font-size: 10px;
+      color: #00ffa3;
+      word-break: break-all;
+      margin-bottom: 8px;
+      user-select: all;
+    }
+
+    /* Channel clips */
+    .clips-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .clips-count { font-size: 11px; color: #64748b; }
+    .clip-list { display: flex; flex-direction: column; gap: 8px; max-height: 380px; overflow-y: auto; }
+    .clip-item {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 9px;
+      padding: 10px;
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+    .clip-item:hover { border-color: rgba(0,255,163,0.2); }
+    .clip-thumb {
+      width: 72px;
+      min-width: 72px;
+      height: 40px;
+      border-radius: 5px;
+      object-fit: cover;
+      background: #1a1f2e;
+    }
+    .clip-info { flex: 1; min-width: 0; }
+    .clip-name {
+      font-size: 12px;
+      font-weight: 600;
+      color: #e2e8f0;
+      line-height: 1.3;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      margin-bottom: 4px;
+    }
+    .clip-creator { font-size: 10px; color: #64748b; margin-bottom: 6px; }
+    .clip-dl-btn {
+      background: rgba(0,255,163,0.12);
+      border: 1px solid rgba(0,255,163,0.3);
+      border-radius: 6px;
+      color: #00ffa3;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 4px 8px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .clip-dl-btn:hover { background: rgba(0,255,163,0.25); }
+    .clip-dl-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .load-more {
+      margin-top: 10px;
+      padding: 8px;
+      width: 100%;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      color: #64748b;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .load-more:hover { color: #94a3b8; border-color: rgba(255,255,255,0.2); }
+    .load-more:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .channel-input-row {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    .channel-id-input {
+      flex: 1;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 7px;
+      color: #e2e8f0;
+      padding: 7px 10px;
+      font-size: 11px;
+      font-family: monospace;
+    }
+    .channel-id-input:focus { outline: none; border-color: #60a5fa; }
+    .channel-id-input::placeholder { color: #475569; }
+    .btn-sm {
+      padding: 7px 12px;
+      border-radius: 7px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      background: rgba(96,165,250,0.15);
+      border: 1px solid rgba(96,165,250,0.3);
+      color: #60a5fa;
+      white-space: nowrap;
+    }
+    .btn-sm:hover { background: rgba(96,165,250,0.25); }
+
+    .empty-state { text-align: center; padding: 20px; color: #64748b; font-size: 12px; }
+    .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.1); border-top-color: #00ffa3; border-radius: 50%; animation: spin 0.7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* scrollbar */
+    .clip-list::-webkit-scrollbar { width: 4px; }
+    .clip-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+    /* Guide box */
+    .guide-box {
+      background: rgba(96,165,250,0.07);
+      border: 1px solid rgba(96,165,250,0.2);
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+    }
+    .guide-title { font-size: 11px; font-weight: 700; color: #60a5fa; margin-bottom: 6px; }
+    .guide-step { font-size: 11px; color: #94a3b8; line-height: 1.8; }
+    .guide-url {
+      font-family: monospace;
+      font-size: 10px;
+      color: #64748b;
+      background: rgba(0,0,0,0.3);
+      border-radius: 5px;
+      padding: 3px 8px;
+      margin: 4px 0;
+    }
+    .guide-highlight { color: #00ffa3; }
+
+    .vod-server-status { padding: 6px 10px; border-radius: 7px; font-size: 11px; }
+    .vod-server-status.ok { background: rgba(0,255,163,0.08); color: #00ffa3; border: 1px solid rgba(0,255,163,0.2); }
+    .vod-server-status.warn { background: rgba(251,191,36,0.08); color: #fbbf24; border: 1px solid rgba(251,191,36,0.2); }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <div class="logo">CHZZK DL</div>
+      <div class="subtitle">치지직 다운로더</div>
+    </div>
+    <div id="authBadge" class="auth-badge" style="margin-left:auto; margin-bottom:0;">
+      <div class="auth-dot" id="authDot"></div>
+      <span id="authText">확인 중...</span>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="download">⬇ 현재 영상</div>
+    <div class="tab" data-tab="clips">📋 채널 클립</div>
+  </div>
+
+  <!-- Tab 1: 현재 영상 -->
+  <div id="tab-download" class="panel active">
+    <div id="pageLoading" class="empty-state">
+      <div class="spinner"></div>
+      <div style="margin-top:8px">페이지 감지 중...</div>
+    </div>
+
+    <!-- Clip/VOD detected -->
+    <div id="pageContent" style="display:none;">
+      <img id="thumbnail" class="thumbnail" />
+      <div class="page-card">
+        <div class="page-type" id="pageType"></div>
+        <div class="page-title" id="pageTitle">로딩 중...</div>
+        <div class="page-meta" id="pageMeta"></div>
+      </div>
+
+      <!-- Clip streams -->
+      <div id="clipStreams" style="display:none;">
+        <div class="streams-list" id="streamBadges"></div>
+        <div class="row">
+          <label class="field-label">화질</label>
+          <select id="clipQuality">
+            <option value="best">Best (최고화질)</option>
+            <option value="1080">1080p</option>
+            <option value="720">720p</option>
+            <option value="480">480p</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" id="btnDownloadClip">⬇ 클립 다운로드</button>
+      </div>
+
+      <!-- VOD info -->
+      <div id="vodInfo" style="display:none;">
+        <div id="vodServerStatus" class="vod-server-status" style="font-size:11px; margin-bottom:8px;"></div>
+        <button class="btn btn-primary" id="btnDownloadVod" style="display:none; margin-bottom:10px;">⬇ VOD 다운로드</button>
+        <p style="font-size:11px; color:#64748b; margin-bottom:8px;">또는 터미널에서 직접 실행:</p>
+        <div class="cmd-box" id="vodCommand"></div>
+        <button class="btn btn-secondary" id="btnCopyCmd">📋 명령어 복사</button>
+        <p style="font-size:10px; color:#475569; margin-top:6px;">* yt-dlp 필요: <code style="color:#00ffa3">brew install yt-dlp</code></p>
+      </div>
+
+      <!-- Live page -->
+      <div id="liveInfo" style="display:none;">
+        <div id="liveStatusBadge" class="live-status-badge off">확인 중...</div>
+        <input type="hidden" id="liveChannelId" />
+        <div id="liveServerStatus" class="vod-server-status warn" style="margin-bottom:8px;"></div>
+        <button class="btn btn-record" id="btnRecordLive">⏺ 녹화 시작</button>
+        <button class="btn btn-stop" id="btnStopLive" style="display:none;">⏹ 녹화 중지</button>
+        <p style="font-size:11px; color:#64748b; margin: 8px 0;">또는 터미널에서 직접 실행:</p>
+        <div class="cmd-box" id="liveCommand"></div>
+        <button class="btn btn-secondary" id="btnCopyLiveCmd">📋 명령어 복사</button>
+        <p style="font-size:10px; color:#475569; margin-top:6px;">* 라이브 방송 중에만 녹화 가능합니다</p>
+      </div>
+
+      <!-- Channel page -->
+      <div id="channelInfo" style="display:none;">
+        <p style="font-size:12px; color:#94a3b8;">"채널 클립" 탭에서 구독자가 만든 클립을 확인하세요.</p>
+        <button class="btn btn-secondary" id="btnGoToClips" style="margin-top:10px;">📋 채널 클립 보기</button>
+      </div>
+
+      <div class="status-bar" id="dlStatus"></div>
+    </div>
+
+    <div id="pageOther" style="display:none;" class="empty-state">
+      <p>📺 치지직 영상/클립/채널 페이지를<br>열면 여기에 다운로드 옵션이 나타납니다.</p>
+    </div>
+  </div>
+
+  <!-- Tab 2: 채널 클립 -->
+  <div id="tab-clips" class="panel">
+    <div class="guide-box">
+      <div class="guide-title">📌 사용 방법</div>
+      <div class="guide-step">① Chrome에서 치지직 채널 페이지 열기</div>
+      <div class="guide-step">② 주소창의 URL 복사</div>
+      <div class="guide-url">chzzk.naver.com/<span class="guide-highlight">{채널ID}</span></div>
+      <div class="guide-step">③ 아래에 붙여넣고 불러오기</div>
+    </div>
+
+    <div class="channel-input-row">
+      <input type="text" id="channelIdInput" class="channel-id-input"
+        placeholder="https://chzzk.naver.com/8421eba..." />
+      <button class="btn-sm" id="btnLoadClips">불러오기</button>
+    </div>
+
+    <div id="clipsLoading" class="empty-state" style="display:none;">
+      <div class="spinner"></div>
+      <div style="margin-top:8px">클립 목록 불러오는 중...</div>
+    </div>
+
+    <div id="clipsContent" style="display:none;">
+      <div class="clips-header">
+        <span style="font-size:12px; font-weight:600; color:#e2e8f0;">채널 클립</span>
+        <span class="clips-count" id="clipsCount"></span>
+      </div>
+      <div class="clip-list" id="clipList"></div>
+      <button class="load-more" id="btnLoadMore" style="display:none;">더 불러오기</button>
+    </div>
+
+    <div id="clipsEmpty" class="empty-state" style="display:none;"></div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
