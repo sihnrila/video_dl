@@ -595,3 +595,82 @@ select {
     from { opacity: 0; transform: translateY(-8px); }
     to { opacity: 1; transform: translateY(0); }
 }
+
+/* ── Mobile ── */
+@media (max-width: 520px) {
+    body {
+        align-items: flex-start;
+        padding: 0;
+    }
+
+    .container {
+        padding: 1rem;
+        max-width: 100%;
+    }
+
+    .glass-card {
+        padding: 1.4rem 1.2rem;
+        border-radius: 16px;
+    }
+
+    h1 { font-size: 1.9rem; }
+
+    /* 쿠키 헤더: 두 줄로 감싸기 */
+    .cookie-header {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    .cookie-header > span {
+        flex: 1 1 100%;
+        font-size: 0.82rem;
+    }
+    .cookie-header-actions {
+        flex: 1 1 100%;
+        justify-content: flex-start;
+    }
+    .cookie-saved-badge {
+        display: block;
+        margin: 4px 0 0 0;
+        width: fit-content;
+    }
+
+    /* 쿠키 입력: 1열로 */
+    .cookie-inputs {
+        grid-template-columns: 1fr;
+    }
+    .cookie-inputs .input-group { margin-bottom: 0.8rem; }
+    .cookie-inputs .input-group:last-child { margin-bottom: 0; }
+
+    /* 화질 선택: 1열로 */
+    .options-row {
+        grid-template-columns: 1fr;
+    }
+
+    /* 채널 입력: 버튼을 아래로 */
+    .channel-input-row {
+        flex-direction: column;
+    }
+    .load-btn {
+        width: 100%;
+        padding: 0.8rem;
+    }
+
+    /* 클립 썸네일 조금 작게 */
+    .clip-thumb,
+    .clip-thumb-placeholder {
+        width: 64px;
+        min-width: 64px;
+        height: 36px;
+    }
+
+    /* 액션 버튼들 줄바꿈 허용 */
+    .cookie-action-btn {
+        font-size: 0.7rem;
+        padding: 0.3rem 0.55rem;
+    }
+
+    input[type="text"],
+    input[type="password"] {
+        font-size: 0.95rem;
+    }
+}
