@@ -407,6 +407,82 @@ setInterval(() => {
   }
 }, 300000)
 
+// Live recording jobs (token → { proc, status, log[], path, startedAt })
+const liveJobs = new Map()
+
+app.post('/api/start-live', async (req, res) => {
+  const { channelId, nidAut = '', nidSes = '' } = req.body
+  if (!channelId) return res.status(400).json({ error: '채널 ID가 필요합니다.' })
+
+  const token = crypto.randomBytes(16).toString('hex')
+  const job = { status: 'running', log: [], progress: 0, error: null, path: null, filename: null, startedAt: Date.now(), proc: null }
+  vodJobs.set(token, job)
+  liveJobs.set(token, job)
+
+  res.json({ token })
+
+  ;(async () => {
+    const url = `https://chzzk.naver.com/live/${channelId}`
+    const tmpTemplate = path.join(os.tmpdir(), `chzzk_live_${token}.%(ext)s`)
+    const args = []
+    const aut = cleanCookieValue(nidAut)
+    const ses = cleanCookieValue(nidSes)
+    if (aut && ses) args.push('--add-header', `Cookie:NID_AUT=${aut}; NID_SES=${ses}`)
+    args.push('-f', 'bv+ba/b', '--merge-output-format', 'mp4')
+    args.push('-o', tmpTemplate)
+    args.push('--no-check-certificates', '--add-header', 'Referer:https://chzzk.naver.com/', '--newline')
+    args.push(url)
+
+    const proc = spawn('yt-dlp', args)
+    job.proc = proc
+    let actualPath = null
+
+    proc.stdout.on('data', data => {
+      const text = data.toString()
+      const dest = text.match(/\[download\] Destination: (.+)/)
+      if (dest) actualPath = dest[1].trim()
+      const merge = text.match(/Merging formats into "(.+)"/)
+      if (merge) actualPath = merge[1].trim()
+      text.split('\n').forEach(l => { if (l.trim()) job.log.push(l.trim()) })
+    })
+    proc.stderr.on('data', data => {
+      data.toString().split('\n').forEach(l => { if (l.trim()) job.log.push(`[err] ${l.trim()}`) })
+    })
+    proc.on('close', code => {
+      if (code === 0 || code === null) {
+        if (!actualPath) {
+          const found = fs.readdirSync(os.tmpdir()).find(f => f.startsWith(`chzzk_live_${token}`))
+          if (found) actualPath = path.join(os.tmpdir(), found)
+        }
+        if (actualPath && fs.existsSync(actualPath)) {
+          const ext = path.extname(actualPath).slice(1) || 'mp4'
+          job.path = actualPath
+          job.filename = `live_${channelId}.${ext}`
+          pendingFiles.set(token, { path: actualPath, filename: job.filename, createdAt: Date.now() })
+          job.progress = 100
+          job.status = 'done'
+        } else {
+          job.status = 'error'
+          job.error = '녹화 파일을 찾지 못했습니다.'
+        }
+      } else {
+        job.status = 'error'
+        job.error = `종료 코드: ${code}`
+      }
+      liveJobs.delete(token)
+    })
+  })()
+})
+
+app.post('/api/stop-live/:token', (req, res) => {
+  const job = liveJobs.get(req.params.token)
+  if (!job) return res.status(404).json({ error: '녹화 작업을 찾을 수 없습니다.' })
+  if (job.proc) {
+    job.proc.kill('SIGTERM')
+  }
+  res.json({ ok: true })
+})
+
 app.post('/api/pin/create', (req, res) => {
   const { nidAut, nidSes } = req.body
   if (!nidAut || !nidSes) return res.status(400).json({ error: '쿠키를 먼저 입력해주세요.' })
