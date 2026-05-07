@@ -3,9 +3,9 @@ const { useState, useEffect, useRef } = React;
 function App() {
     const [tab, setTab] = useState('download');
 
-    // 공유 쿠키
-    const [nidAut, setNidAut] = useState('');
-    const [nidSes, setNidSes] = useState('');
+    // 공유 쿠키 (localStorage 유지)
+    const [nidAut, setNidAut] = useState(() => localStorage.getItem('nid_aut') || '');
+    const [nidSes, setNidSes] = useState(() => localStorage.getItem('nid_ses') || '');
     const [showCookieHelp, setShowCookieHelp] = useState(false);
 
     // 다운로드 탭
@@ -26,6 +26,9 @@ function App() {
     const [hasNext, setHasNext] = useState(false);
     const [totalLoaded, setTotalLoaded] = useState(0);
     const [clipStatus, setClipStatus] = useState({});
+
+    useEffect(() => { localStorage.setItem('nid_aut', nidAut); }, [nidAut]);
+    useEffect(() => { localStorage.setItem('nid_ses', nidSes); }, [nidSes]);
 
     const isClip = url.includes('/clips/');
 
