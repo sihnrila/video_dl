@@ -82,7 +82,8 @@ p.subtitle {
     align-items: center;
 }
 
-input[type="text"] {
+input[type="text"],
+input[type="password"] {
     width: 100%;
     background: rgba(0, 0, 0, 0.2);
     border: 1px solid var(--glass-border);
@@ -93,7 +94,8 @@ input[type="text"] {
     transition: all 0.3s ease;
 }
 
-input[type="text"]:focus {
+input[type="text"]:focus,
+input[type="password"]:focus {
     outline: none;
     border-color: var(--primary);
     box-shadow: 0 0 0 2px var(--primary-glow);
@@ -219,3 +221,76 @@ select {
     background: var(--glass-border);
     border-radius: 3px;
 }
+
+/* Cookie Section */
+.cookie-section {
+    margin-bottom: 1.5rem;
+    background: rgba(139, 92, 246, 0.08);
+    border: 1px solid rgba(139, 92, 246, 0.25);
+    border-radius: 16px;
+    padding: 1.2rem;
+}
+
+.cookie-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.8rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-main);
+}
+
+.required {
+    color: var(--error);
+    font-size: 0.75rem;
+    margin-left: 0.3rem;
+}
+
+.optional {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    margin-left: 0.3rem;
+}
+
+.help-btn {
+    background: rgba(139, 92, 246, 0.2);
+    border: 1px solid rgba(139, 92, 246, 0.4);
+    border-radius: 8px;
+    color: #a78bfa;
+    font-size: 0.75rem;
+    padding: 0.3rem 0.7rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.help-btn:hover {
+    background: rgba(139, 92, 246, 0.35);
+}
+
+.cookie-help {
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 10px;
+    padding: 0.9rem 1rem;
+    margin-bottom: 1rem;
+    font-size: 0.82rem;
+    line-height: 1.9;
+    color: var(--text-muted);
+}
+
+.cookie-help strong { color: var(--text-main); }
+.cookie-help code {
+    background: rgba(255,255,255,0.1);
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    font-family: monospace;
+    color: var(--primary);
+}
+
+.cookie-inputs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+.cookie-inputs .input-group { margin-bottom: 0; }

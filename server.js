@@ -2,6 +2,9 @@ import express from 'express'
 import { spawn } from 'child_process'
 import path from 'path'
 import os from 'os'
+import fs from 'fs'
+import https from 'https'
+import crypto from 'crypto'
 import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -10,60 +13,361 @@ const app = express()
 app.use(express.json())
 app.use(express.static(path.join(__dirname, 'public')))
 
-app.post('/download', (req, res) => {
-  const { url, quality = 'best', browser = 'chrome' } = req.body
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+  if (req.method === 'OPTIONS') return res.sendStatus(200)
+  next()
+})
 
-  if (!url?.includes('chzzk.naver.com')) {
-    return res.status(400).json({ error: '치지직 URL만 가능합니다.' })
+// Temp file registry: token → { path, filename, createdAt }
+const pendingFiles = new Map()
+
+// VOD job registry: token → { status, log[], progress, error, path, filename, startedAt }
+const vodJobs = new Map()
+setInterval(() => {
+  const cutoff = Date.now() - 7200000
+  for (const [token, job] of vodJobs) {
+    if (job.startedAt < cutoff) {
+      if (job.path) fs.unlink(job.path, () => {})
+      vodJobs.delete(token)
+    }
   }
-
-  const outputDir = path.join(os.homedir(), 'Downloads')
-  const args = []
-
-  if (browser !== 'none') {
-    args.push('--cookies-from-browser', browser)
+}, 600000)
+setInterval(() => {
+  const cutoff = Date.now() - 3600000
+  for (const [token, info] of pendingFiles) {
+    if (info.createdAt < cutoff) {
+      fs.unlink(info.path, () => {})
+      pendingFiles.delete(token)
+    }
   }
-  
-  args.push('-f', quality === 'best' ? 'best' : quality)
-  args.push('-o', `${outputDir}/%(title)s.%(ext)s`)
-  args.push('--newline') // Ensure progress is sent line by line
-  args.push(url)
+}, 600000)
+
+// Serve a downloaded file to the browser
+app.get('/file/:token', (req, res) => {
+  const info = pendingFiles.get(req.params.token)
+  if (!info) return res.status(404).send('파일을 찾을 수 없습니다. 다시 다운로드해주세요.')
+  pendingFiles.delete(req.params.token)
+  res.download(info.path, info.filename, () => fs.unlink(info.path, () => {}))
+})
+
+function cleanCookieValue(val) {
+  if (!val) return ''
+  val = val.trim()
+  return val.includes('=') ? val.split('=').slice(1).join('=').trim() : val
+}
+
+function fetchApi(hostname, apiPath, nidAut, nidSes) {
+  return new Promise((resolve, reject) => {
+    const cookieParts = []
+    const aut = cleanCookieValue(nidAut)
+    const ses = cleanCookieValue(nidSes)
+    if (aut) cookieParts.push(`NID_AUT=${aut}`)
+    if (ses) cookieParts.push(`NID_SES=${ses}`)
+
+    https.get({
+      hostname,
+      path: apiPath,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Referer': 'https://chzzk.naver.com/',
+        'Accept': 'application/json',
+        ...(cookieParts.length ? { 'Cookie': cookieParts.join('; ') } : {})
+      }
+    }, res => {
+      let data = ''
+      res.on('data', c => data += c)
+      res.on('end', () => {
+        console.log(`[${hostname}${apiPath}] → ${res.statusCode}: ${data.slice(0, 200)}`)
+        try { resolve({ status: res.statusCode, json: JSON.parse(data) }) }
+        catch (e) { reject(new Error(`JSON 파싱 오류: ${data.slice(0, 100)}`)) }
+      })
+    }).on('error', reject)
+  })
+}
+
+// Step 1: clip detail → videoId
+// Step 2: videohub → direct MP4 URLs sorted by resolution (highest first)
+async function resolveClipUrls(clipId, nidAut, nidSes) {
+  const { status, json } = await fetchApi(
+    'api.chzzk.naver.com',
+    `/service/v1/clips/${clipId}/detail?optionalProperties=OWNER_CHANNEL`,
+    nidAut, nidSes
+  )
+
+  if (status === 401) throw new Error('인증 실패 (401): NID_AUT와 NID_SES 값을 확인해주세요.\nChrome → F12 → Application → Cookies → chzzk.naver.com')
+  if (status === 404) throw new Error('클립을 찾을 수 없습니다 (404). URL을 다시 확인해주세요.')
+  if (status !== 200) throw new Error(`클립 API 오류 (${status}): ${json?.message || ''}`)
+
+  const content = json?.content
+  if (!content) throw new Error('API 응답에 content가 없습니다.')
+
+  const videoId = content.videoId
+  const title = content.clipTitle
+  if (!videoId) throw new Error(`videoId를 찾지 못했습니다. 응답 키: ${Object.keys(content).join(', ')}`)
+
+  const { status: vs, json: vj } = await fetchApi(
+    'api-videohub.naver.com',
+    `/shortformhub/feeds/v3/card?serviceType=CHZZK&seedMediaId=${videoId}&mediaType=VOD`,
+    nidAut, nidSes
+  )
+
+  if (vs !== 200) throw new Error(`Videohub API 오류 (${vs})`)
+  if (vj?.card?.content?.error) throw new Error(`Videohub 오류: ${JSON.stringify(vj.card.content.error)}`)
+
+  const list = vj?.card?.content?.vod?.playback?.videos?.list
+  if (!list?.length) throw new Error('스트림 URL을 찾지 못했습니다.')
+
+  const sorted = [...list]
+    .filter(v => v.source)
+    .sort((a, b) => (b.encodingOption?.height || 0) - (a.encodingOption?.height || 0))
+
+  return { title, streams: sorted }
+}
+
+function selectStream(streams, quality) {
+  if (quality === 'best') return streams[0]
+  const target = parseInt(quality, 10)
+  return streams.find(s => s.encodingOption?.height === target)
+    || streams.find(s => (s.encodingOption?.height || 0) <= target)
+    || streams[0]
+}
+
+// Download a URL to a local file, calling onProgress(received, total) each chunk
+function downloadToFile(url, filePath, onProgress) {
+  return new Promise((resolve, reject) => {
+    const doReq = (currentUrl, hops = 0) => {
+      if (hops > 5) return reject(new Error('Too many redirects'))
+      https.get(currentUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://chzzk.naver.com/' }
+      }, res => {
+        if ([301, 302, 307, 308].includes(res.statusCode)) {
+          res.resume()
+          const loc = res.headers.location
+          return doReq(loc.startsWith('http') ? loc : new URL(loc, currentUrl).href, hops + 1)
+        }
+        if (res.statusCode !== 200) {
+          res.resume()
+          return reject(new Error(`HTTP ${res.statusCode}`))
+        }
+
+        const total = parseInt(res.headers['content-length']) || 0
+        let received = 0
+        const file = fs.createWriteStream(filePath)
+
+        res.on('data', chunk => { received += chunk.length; onProgress?.(received, total) })
+        res.pipe(file)
+        file.on('finish', () => file.close(resolve))
+        file.on('error', err => { fs.unlink(filePath, () => {}); reject(err) })
+      }).on('error', reject)
+    }
+    doReq(url)
+  })
+}
+
+const fmtBytes = n => n >= 1048576 ? `${(n / 1048576).toFixed(1)}MB` : `${(n / 1024).toFixed(0)}KB`
+
+// Extension VOD: start background download, return token immediately
+app.post('/api/start-vod', async (req, res) => {
+  const { url, nidAut = '', nidSes = '' } = req.body
+  if (!url?.match(/chzzk\.naver\.com\/video\/\w+/))
+    return res.status(400).json({ error: '치지직 VOD URL만 가능합니다.' })
+
+  const token = crypto.randomBytes(16).toString('hex')
+  const job = { status: 'running', log: [], progress: 0, error: null, path: null, filename: null, startedAt: Date.now() }
+  vodJobs.set(token, job)
+
+  res.json({ token })
+
+  // Run yt-dlp in background
+  ;(async () => {
+    const tmpTemplate = path.join(os.tmpdir(), `chzzk_${token}.%(ext)s`)
+    const args = []
+    const aut = cleanCookieValue(nidAut)
+    const ses = cleanCookieValue(nidSes)
+    if (aut && ses) args.push('--add-header', `Cookie:NID_AUT=${aut}; NID_SES=${ses}`)
+    args.push('-f', 'bv+ba/b', '--merge-output-format', 'mp4')
+    args.push('-o', tmpTemplate)
+    args.push('--no-check-certificates', '--add-header', 'Referer:https://chzzk.naver.com/', '--newline')
+    args.push(url)
+
+    const proc = spawn('yt-dlp', args)
+    let actualPath = null
+
+    proc.stdout.on('data', data => {
+      const text = data.toString()
+      const dest = text.match(/\[download\] Destination: (.+)/)
+      if (dest) actualPath = dest[1].trim()
+      const merge = text.match(/Merging formats into "(.+)"/)
+      if (merge) actualPath = merge[1].trim()
+      const pctM = text.match(/(\d+\.?\d*)%/)
+      if (pctM) job.progress = parseFloat(pctM[1])
+      text.split('\n').forEach(l => { if (l.trim()) job.log.push(l.trim()) })
+    })
+    proc.stderr.on('data', data => {
+      data.toString().split('\n').forEach(l => { if (l.trim()) job.log.push(`[err] ${l.trim()}`) })
+    })
+
+    proc.on('close', code => {
+      if (code === 0) {
+        if (!actualPath) {
+          const found = fs.readdirSync(os.tmpdir()).find(f => f.startsWith(`chzzk_${token}`))
+          if (found) actualPath = path.join(os.tmpdir(), found)
+        }
+        if (actualPath && fs.existsSync(actualPath)) {
+          const ext = path.extname(actualPath).slice(1) || 'mp4'
+          job.path = actualPath
+          job.filename = `download.${ext}`
+          pendingFiles.set(token, { path: actualPath, filename: job.filename, createdAt: Date.now() })
+          job.progress = 100
+          job.status = 'done'
+        } else {
+          job.status = 'error'
+          job.error = '다운로드 파일을 찾지 못했습니다.'
+        }
+      } else {
+        job.status = 'error'
+        job.error = `yt-dlp 종료 코드: ${code}`
+      }
+    })
+  })()
+})
+
+// Extension VOD: poll status
+app.get('/api/vod-status/:token', (req, res) => {
+  const job = vodJobs.get(req.params.token)
+  if (!job) return res.status(404).json({ error: '작업을 찾을 수 없습니다.' })
+  res.json({
+    status: job.status,
+    progress: job.progress,
+    log: job.log.slice(-5),
+    fileToken: job.status === 'done' ? req.params.token : null,
+    error: job.error
+  })
+})
+
+app.post('/download', async (req, res) => {
+  const { url, quality = 'best', nidAut = '', nidSes = '' } = req.body
+  if (!url?.includes('chzzk.naver.com')) return res.status(400).json({ error: '치지직 URL만 가능합니다.' })
 
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
   res.setHeader('Connection', 'keep-alive')
 
-  console.log(`Starting download: ${url}`)
-  
-  const proc = spawn('yt-dlp', args)
+  const send = (type, data) => res.write(`data: ${JSON.stringify({ type, data })}\n\n`)
 
-  proc.stdout.on('data', (data) => {
-    const lines = data.toString().split('\n')
-    lines.forEach(line => {
-      if (line.trim()) {
-        res.write(`data: ${JSON.stringify({ type: 'stdout', message: line.trim() })}\n\n`)
-      }
-    })
-  })
+  try {
+    const clipMatch = url.match(/chzzk\.naver\.com\/clips\/([A-Za-z0-9_-]+)/)
 
-  proc.stderr.on('data', (data) => {
-    const lines = data.toString().split('\n')
-    lines.forEach(line => {
-      if (line.trim()) {
-        res.write(`data: ${JSON.stringify({ type: 'stderr', message: line.trim() })}\n\n`)
-      }
-    })
-  })
+    if (clipMatch) {
+      // ====== CLIP ======
+      const clipId = clipMatch[1]
+      if (!nidAut || !nidSes) throw new Error('클립 다운로드에는 NID_AUT와 NID_SES 쿠키가 필요합니다.')
 
-  proc.on('close', (code) => {
-    console.log(`Process exited with code ${code}`)
-    res.write(`data: ${JSON.stringify({ type: 'status', message: code === 0 ? 'DONE' : 'ERROR', code })}\n\n`)
+      send('log', `🔍 클립 정보 조회 중 (ID: ${clipId})`)
+      const { title, streams } = await resolveClipUrls(clipId, nidAut, nidSes)
+      const selected = selectStream(streams, quality)
+
+      send('log', `📌 제목: ${title}`)
+      send('log', `📊 사용 가능 화질: ${streams.map(s => `${s.encodingOption?.height || '?'}p`).join(', ')}`)
+      send('log', `⬇️ ${selected.encodingOption?.height || '?'}p 다운로드 중...`)
+
+      const token = crypto.randomBytes(16).toString('hex')
+      const tmpPath = path.join(os.tmpdir(), `chzzk_${token}.mp4`)
+      const safeTitle = (title || 'clip').replace(/[\\/:*?"<>|\n]/g, '').trim() || 'clip'
+
+      let lastPct = -1
+      await downloadToFile(selected.source, tmpPath, (received, total) => {
+        if (!total) return
+        const pct = Math.floor(received / total * 100)
+        if (pct > lastPct && pct % 5 === 0) {
+          lastPct = pct
+          send('progress', pct)
+          send('log', `[download] ${pct}% (${fmtBytes(received)} / ${fmtBytes(total)})`)
+        }
+      })
+
+      pendingFiles.set(token, { path: tmpPath, filename: `${safeTitle}.mp4`, createdAt: Date.now() })
+      send('progress', 100)
+      send('file_ready', token)
+      send('done', 'OK')
+      res.end()
+
+    } else if (url.match(/chzzk\.naver\.com\/video\/\w+/)) {
+      // ====== VOD ======
+      send('log', '⬇️ VOD 다운로드 시작...')
+
+      const token = crypto.randomBytes(16).toString('hex')
+      const tmpTemplate = path.join(os.tmpdir(), `chzzk_${token}.%(ext)s`)
+
+      const args = []
+      const aut = cleanCookieValue(nidAut)
+      const ses = cleanCookieValue(nidSes)
+      if (aut && ses) args.push('--add-header', `Cookie:NID_AUT=${aut}; NID_SES=${ses}`)
+
+      const fmt = quality === 'best'
+        ? 'bv+ba/b'
+        : `bestvideo[height<=${quality}]+bestaudio/best[height<=${quality}]`
+
+      args.push('-f', fmt, '--merge-output-format', 'mp4')
+      args.push('-o', tmpTemplate)
+      args.push('--no-check-certificates', '--add-header', 'Referer:https://chzzk.naver.com/', '--newline')
+      args.push(url)
+
+      const proc = spawn('yt-dlp', args)
+      let actualPath = null
+
+      proc.stdout.on('data', data => {
+        const text = data.toString()
+        const dest = text.match(/\[download\] Destination: (.+)/)
+        if (dest) actualPath = dest[1].trim()
+        const merge = text.match(/Merging formats into "(.+)"/)
+        if (merge) actualPath = merge[1].trim()
+        const pctM = text.match(/(\d+\.?\d*)%/)
+        if (pctM) send('progress', parseFloat(pctM[1]))
+        text.split('\n').forEach(l => { if (l.trim()) send('log', l.trim()) })
+      })
+      proc.stderr.on('data', data => {
+        data.toString().split('\n').forEach(l => { if (l.trim()) send('err', l.trim()) })
+      })
+
+      proc.on('close', code => {
+        if (code === 0) {
+          if (!actualPath) {
+            const found = fs.readdirSync(os.tmpdir()).find(f => f.startsWith(`chzzk_${token}`))
+            if (found) actualPath = path.join(os.tmpdir(), found)
+          }
+          if (actualPath && fs.existsSync(actualPath)) {
+            const ext = path.extname(actualPath).slice(1) || 'mp4'
+            pendingFiles.set(token, { path: actualPath, filename: `download.${ext}`, createdAt: Date.now() })
+            send('progress', 100)
+            send('file_ready', token)
+            send('done', 'OK')
+          } else {
+            send('err', '❌ 다운로드 파일을 찾지 못했습니다.')
+            send('done', 'ERROR')
+          }
+        } else {
+          send('done', 'ERROR')
+        }
+        res.end()
+      })
+
+      return
+
+    } else {
+      throw new Error('지원하지 않는 URL입니다. /video/ 또는 /clips/ URL을 입력해주세요.')
+    }
+
+  } catch (err) {
+    console.error('Error:', err.message)
+    send('err', `❌ ${err.message}`)
+    send('done', 'ERROR')
     res.end()
-  })
+  }
 })
 
-const PORT = process.env.PORT || 3000
-app.listen(PORT, () => {
-  console.log(`\n🚀 Server is running at http://localhost:${PORT}`)
-  console.log(`📂 Downloads will be saved to: ${path.join(os.homedir(), 'Downloads')}\n`)
-})
+const PORT = process.env.PORT || 5555
+app.listen(PORT, () => console.log(`\n🚀 http://localhost:${PORT}\n`))
