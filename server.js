@@ -398,5 +398,18 @@ app.get('/api/channel-clips', async (req, res) => {
   }
 })
 
+app.post('/api/check-cookie', async (req, res) => {
+  const { nidAut = '', nidSes = '' } = req.body
+  if (!nidAut || !nidSes) return res.status(400).json({ valid: false, message: '쿠키를 입력해주세요.' })
+  try {
+    const { status, json } = await fetchApi('api.chzzk.naver.com', '/service/v1/account/session', nidAut, nidSes)
+    if (status === 200 && json?.content) return res.json({ valid: true, message: '쿠키가 유효합니다.' })
+    if (status === 401) return res.json({ valid: false, message: '쿠키가 만료되었습니다. 다시 로그인 후 복사해주세요.' })
+    return res.json({ valid: false, message: `확인 실패 (${status})` })
+  } catch (err) {
+    res.status(500).json({ valid: false, message: err.message })
+  }
+})
+
 const PORT = process.env.PORT || 5555
 app.listen(PORT, () => console.log(`\n🚀 http://localhost:${PORT}\n`))

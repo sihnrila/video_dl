@@ -1,5 +1,7 @@
 const { useState, useEffect, useRef } = React;
 
+const BOOKMARKLET_CODE = `javascript:(function(){var a=document.cookie.match(/NID_AUT=([^;]+)/),s=document.cookie.match(/NID_SES=([^;]+)/);if(!a||!s){alert('쿠키 자동 읽기 실패\\nNID_AUT와 NID_SES를 직접 복사해주세요.');return;}var u='${window.location.origin}/#ck='+encodeURIComponent(a[1]+'|'+s[1]);window.open(u,'_blank');})();`;
+
 function App() {
     const [tab, setTab] = useState('download');
 
@@ -7,6 +9,10 @@ function App() {
     const [nidAut, setNidAut] = useState(() => localStorage.getItem('nid_aut') || '');
     const [nidSes, setNidSes] = useState(() => localStorage.getItem('nid_ses') || '');
     const [showCookieHelp, setShowCookieHelp] = useState(false);
+    const [cookieCheckState, setCookieCheckState] = useState(null); // null | 'checking' | 'valid' | 'invalid'
+    const [cookieCheckMsg, setCookieCheckMsg] = useState('');
+    const [bookmarkletCopied, setBookmarkletCopied] = useState(false);
+    const [cookieSavedNotice, setCookieSavedNotice] = useState(false);
 
     // 다운로드 탭
     const [url, setUrl] = useState('');
@@ -27,8 +33,61 @@ function App() {
     const [totalLoaded, setTotalLoaded] = useState(0);
     const [clipStatus, setClipStatus] = useState({});
 
+    // 북마클릿으로 전달된 쿠키 처리 (#ck=NID_AUT|NID_SES)
+    useEffect(() => {
+        const hash = window.location.hash;
+        if (hash.startsWith('#ck=')) {
+            try {
+                const decoded = decodeURIComponent(hash.slice(4));
+                const [aut, ses] = decoded.split('|');
+                if (aut && ses) {
+                    setNidAut(aut);
+                    setNidSes(ses);
+                    setCookieSavedNotice(true);
+                    setTimeout(() => setCookieSavedNotice(false), 4000);
+                }
+            } catch {}
+            history.replaceState(null, '', window.location.pathname);
+        }
+    }, []);
+
     useEffect(() => { localStorage.setItem('nid_aut', nidAut); }, [nidAut]);
     useEffect(() => { localStorage.setItem('nid_ses', nidSes); }, [nidSes]);
+
+    const hasCookie = !!(nidAut && nidSes);
+
+    const checkCookie = async () => {
+        if (!hasCookie) return;
+        setCookieCheckState('checking');
+        setCookieCheckMsg('');
+        try {
+            const res = await fetch('/api/check-cookie', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ nidAut, nidSes })
+            });
+            const data = await res.json();
+            setCookieCheckState(data.valid ? 'valid' : 'invalid');
+            setCookieCheckMsg(data.message || '');
+        } catch {
+            setCookieCheckState('invalid');
+            setCookieCheckMsg('확인 중 오류가 발생했습니다.');
+        }
+    };
+
+    const clearCookie = () => {
+        setNidAut('');
+        setNidSes('');
+        setCookieCheckState(null);
+        setCookieCheckMsg('');
+    };
+
+    const copyBookmarklet = () => {
+        navigator.clipboard.writeText(BOOKMARKLET_CODE).then(() => {
+            setBookmarkletCopied(true);
+            setTimeout(() => setBookmarkletCopied(false), 2000);
+        });
+    };
 
     const isClip = url.includes('/clips/');
 
@@ -146,18 +205,54 @@ function App() {
                 <h1>CHZZK DL</h1>
                 <p className="subtitle">치지직 고화질 영상 다운로더</p>
 
+                {cookieSavedNotice && (
+                    <div className="cookie-saved-toast">✅ 쿠키가 자동으로 저장되었습니다!</div>
+                )}
+
                 <div className="cookie-section">
                     <div className="cookie-header">
-                        <span>🔐 네이버 인증 쿠키 <span className="optional">(구독자 전용 · 클립 다운로드에 필요)</span></span>
-                        <button className="help-btn" onClick={() => setShowCookieHelp(!showCookieHelp)}>
-                            {showCookieHelp ? '닫기' : '?'}
-                        </button>
+                        <span>
+                            🔐 네이버 인증 쿠키
+                            <span className="optional"> (구독자 전용 · 클립 다운로드에 필요)</span>
+                            {hasCookie && <span className="cookie-saved-badge">저장됨</span>}
+                        </span>
+                        <div className="cookie-header-actions">
+                            {hasCookie && (
+                                <button className="cookie-action-btn check-btn" onClick={checkCookie} disabled={cookieCheckState === 'checking'}>
+                                    {cookieCheckState === 'checking' ? '확인 중...' : '유효성 확인'}
+                                </button>
+                            )}
+                            {hasCookie && (
+                                <button className="cookie-action-btn clear-btn" onClick={clearCookie}>초기화</button>
+                            )}
+                            <button className="help-btn" onClick={() => setShowCookieHelp(!showCookieHelp)}>
+                                {showCookieHelp ? '닫기' : '?'}
+                            </button>
+                        </div>
                     </div>
+
+                    {cookieCheckState && cookieCheckState !== 'checking' && (
+                        <div className={`cookie-check-result ${cookieCheckState}`}>
+                            {cookieCheckState === 'valid' ? '✅' : '❌'} {cookieCheckMsg}
+                        </div>
+                    )}
+
                     {showCookieHelp && (
                         <div className="cookie-help">
+                            <div className="help-section">
+                                <strong>🚀 자동 방법 (북마클릿)</strong>
+                                <p>① 아래 버튼으로 북마클릿 코드 복사 → 브라우저 북마크에 추가</p>
+                                <p>② <strong>chzzk.naver.com</strong>에 로그인 후 북마클릿 클릭 → 자동 저장!</p>
+                                <button className="bookmarklet-btn" onClick={copyBookmarklet}>
+                                    {bookmarkletCopied ? '✅ 복사됨!' : '📋 북마클릿 코드 복사'}
+                                </button>
+                                <p className="help-note">북마클릿 추가: 복사 후 브라우저 북마크 관리자에서 새 북마크 → URL에 붙여넣기</p>
+                            </div>
+                            <div className="help-divider">또는 수동으로</div>
                             <p>① Chrome에서 <strong>chzzk.naver.com</strong>에 로그인</p>
                             <p>② <code>F12</code> → <strong>Application</strong> → <strong>Cookies</strong> → <code>https://chzzk.naver.com</code></p>
                             <p>③ <code>NID_AUT</code>와 <code>NID_SES</code> 값 복사 후 붙여넣기</p>
+                            <p className="help-note">💾 한 번 입력하면 자동으로 저장되어 다음에 다시 입력할 필요 없어요</p>
                         </div>
                     )}
                     <div className="cookie-inputs">
@@ -166,7 +261,7 @@ function App() {
                             <div className="input-wrapper">
                                 <span className="input-icon">🔑</span>
                                 <input type="password" placeholder="NID_AUT 값 붙여넣기"
-                                    value={nidAut} onChange={e => setNidAut(e.target.value)} />
+                                    value={nidAut} onChange={e => { setNidAut(e.target.value); setCookieCheckState(null); }} />
                             </div>
                         </div>
                         <div className="input-group">
@@ -174,7 +269,7 @@ function App() {
                             <div className="input-wrapper">
                                 <span className="input-icon">🔑</span>
                                 <input type="password" placeholder="NID_SES 값 붙여넣기"
-                                    value={nidSes} onChange={e => setNidSes(e.target.value)} />
+                                    value={nidSes} onChange={e => { setNidSes(e.target.value); setCookieCheckState(null); }} />
                             </div>
                         </div>
                     </div>
