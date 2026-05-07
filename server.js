@@ -369,5 +369,34 @@ app.post('/download', async (req, res) => {
   }
 })
 
+app.get('/api/channel-clips', async (req, res) => {
+  let { channelId = '', cursor, size = '20', nidAut = '', nidSes = '' } = req.query
+
+  const urlMatch = channelId.match(/chzzk\.naver\.com\/([0-9a-fA-F]{20,})/i)
+  if (urlMatch) channelId = urlMatch[1]
+
+  if (!channelId.match(/^[0-9a-fA-F]{20,}$/i))
+    return res.status(400).json({ error: '올바른 채널 URL을 입력해주세요. (예: https://chzzk.naver.com/8421eba...)' })
+
+  try {
+    let apiPath = `/service/v1/channels/${channelId}/clips?size=${size}`
+    if (cursor) apiPath += `&next=${encodeURIComponent(cursor)}`
+
+    const { status, json } = await fetchApi('api.chzzk.naver.com', apiPath, nidAut, nidSes)
+
+    if (status === 401) return res.status(401).json({ error: '인증 실패. NID_AUT와 NID_SES를 다시 확인해주세요.' })
+    if (status !== 200) return res.status(status).json({ error: `API 오류 (${status})` })
+
+    const content = json.content || {}
+    res.json({
+      clips: content.data || [],
+      nextCursor: content.page?.next?.clipUID || null,
+      hasNext: !!content.page?.next?.clipUID
+    })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 const PORT = process.env.PORT || 5555
 app.listen(PORT, () => console.log(`\n🚀 http://localhost:${PORT}\n`))
