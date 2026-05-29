@@ -40,10 +40,14 @@ function showStatus(msg, type = 'info') {
 }
 function hideStatus() { $('dlStatus').style.display = 'none' }
 
+function isSoopUrl(url) {
+  return /soop\.com|sooplive\.co\.kr/.test(url)
+}
+
 // ── Tab 1: Current page ───────────────────────────────────────────────
 async function loadPageInfo() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-  if (!tab?.url?.includes('chzzk.naver.com')) {
+  if (!tab?.url?.includes('chzzk.naver.com') && !isSoopUrl(tab?.url)) {
     show('pageLoading', false); show('pageContent', false); show('pageOther', true)
     return
   }
@@ -69,7 +73,8 @@ async function loadPageInfo() {
 
   show('pageLoading', false)
 
-  if (info.type === 'clip') await renderClipPage(info.clipId)
+  if (info.type === 'soop') await renderSoopPage(tab.url)
+  else if (info.type === 'clip') await renderClipPage(info.clipId)
   else if (info.type === 'vod') await renderVodPage(info.videoNo, tab.url)
   else if (info.type === 'live') await renderLivePage(info.channelId, tab.url)
   else if (info.type === 'channel') renderChannelPage(info.channelId)
@@ -77,6 +82,9 @@ async function loadPageInfo() {
 }
 
 function parseUrl(url) {
+  if (isSoopUrl(url)) {
+    return { type: 'soop', url }
+  }
   const u = new URL(url)
   const path = u.pathname
   const clipM = path.match(/^\/clips\/([A-Za-z0-9_-]+)/)
@@ -133,6 +141,40 @@ async function renderClipPage(clipId) {
   hideStatus()
 }
 
+async function renderSoopPage(pageUrl) {
+  show('pageContent', true)
+  show('clipStreams', false); show('vodInfo', false); show('channelInfo', false); show('liveInfo', false)
+  $('pageType').textContent = '🌲 SOOP'
+  $('pageType').className = 'page-type vod'
+  $('pageTitle').textContent = '숲(SOOP) 방송/VOD 영상'
+  $('pageMeta').textContent = pageUrl
+
+  const img = $('thumbnail')
+  img.src = ''
+  img.classList.remove('loaded')
+
+  const cmd = `yt-dlp --cookies-from-browser chrome "${pageUrl}"`
+  $('vodCommand').textContent = cmd
+
+  const { running } = await bg({ action: 'isServerRunning' })
+  $('vodServerStatus').textContent = running
+    ? '✅ 서버 연결됨 — 바로 다운로드 가능'
+    : '⚠️ 서버 꺼짐 — yt-dlp 명령어를 터미널에서 실행하세요'
+  $('vodServerStatus').className = running ? 'vod-server-status ok' : 'vod-server-status warn'
+  $('btnDownloadVod').style.display = running ? 'block' : 'none'
+
+  // Resume active download if exists
+  const active = await bg({ action: 'getActiveDownload', url: pageUrl })
+  if (active?.token) {
+    $('btnDownloadVod').disabled = true
+    $('btnDownloadVod').textContent = '⏳ 다운로드 중...'
+    startVodPoll(active.token)
+  }
+
+  show('vodInfo', true)
+  hideStatus()
+}
+
 let vodPollTimer = null
 
 async function renderVodPage(videoNo, pageUrl) {
@@ -168,6 +210,14 @@ async function renderVodPage(videoNo, pageUrl) {
   $('vodServerStatus').className = running ? 'vod-server-status ok' : 'vod-server-status warn'
   $('btnDownloadVod').style.display = running ? 'block' : 'none'
 
+  // Resume active download if exists
+  const active = await bg({ action: 'getActiveDownload', url: pageUrl })
+  if (active?.token) {
+    $('btnDownloadVod').disabled = true
+    $('btnDownloadVod').textContent = '⏳ 다운로드 중...'
+    startVodPoll(active.token)
+  }
+
   show('vodInfo', true)
   hideStatus()
 }
@@ -195,11 +245,15 @@ function startVodPoll(token) {
       a.click()
       $('btnDownloadVod').disabled = false
       $('btnDownloadVod').textContent = '⬇ VOD 다운로드'
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+      if (tab?.url) bg({ action: 'clearActiveDownload', url: tab.url })
     } else if (r.status === 'error') {
       clearInterval(vodPollTimer)
       showStatus(`❌ ${r.error || '다운로드 실패'}`, 'err')
       $('btnDownloadVod').disabled = false
       $('btnDownloadVod').textContent = '⬇ VOD 다운로드'
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+      if (tab?.url) bg({ action: 'clearActiveDownload', url: tab.url })
     }
   }, 2000)
 }

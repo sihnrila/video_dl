@@ -802,3 +802,141 @@ select {
         font-size: 0.95rem;
     }
 }
+
+/* Active Background Downloads (Extension integration) */
+.active-jobs-section {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--glass-border);
+}
+.section-title {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+    color: var(--primary);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.title-desc {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-weight: 400;
+}
+.active-jobs-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+.active-job-item {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--glass-border);
+    border-radius: 14px;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    transition: all 0.2s ease;
+}
+.active-job-item:hover {
+    border-color: rgba(0, 255, 163, 0.2);
+    background: rgba(255, 255, 255, 0.05);
+}
+.job-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+}
+.job-url {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+}
+.job-status-badge {
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 6px;
+}
+.job-status-badge.running {
+    background: rgba(139, 92, 246, 0.15);
+    color: #a78bfa;
+    border: 1px solid rgba(139, 92, 246, 0.3);
+}
+.job-status-badge.done {
+    background: rgba(0, 255, 163, 0.15);
+    color: var(--primary);
+    border: 1px solid rgba(0, 255, 163, 0.3);
+}
+.job-status-badge.error {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--error);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+.job-progress-row {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+}
+.job-progress-bar-bg {
+    flex: 1;
+    height: 6px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 3px;
+    overflow: hidden;
+}
+.job-progress-bar-fill {
+    height: 100%;
+    width: 0%;
+    transition: width 0.3s ease;
+}
+.job-progress-bar-fill.running {
+    background: linear-gradient(to right, var(--secondary), var(--primary));
+}
+.job-progress-bar-fill.done {
+    background: var(--primary);
+}
+.job-progress-bar-fill.error {
+    background: var(--error);
+}
+.job-progress-pct {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    min-width: 32px;
+    text-align: right;
+}
+.job-log {
+    font-family: monospace;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    background: rgba(0, 0, 0, 0.25);
+    padding: 0.4rem 0.6rem;
+    border-radius: 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+.job-save-btn {
+    background: linear-gradient(135deg, var(--primary), #00d488);
+    border: none;
+    border-radius: 9px;
+    padding: 0.5rem 1rem;
+    color: #0b0e14;
+    font-weight: 700;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    align-self: flex-end;
+    box-shadow: 0 2px 8px var(--primary-glow);
+}
+.job-save-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px var(--primary-glow);
+}

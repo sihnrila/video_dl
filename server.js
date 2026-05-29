@@ -175,13 +175,18 @@ function downloadToFile(url, filePath, onProgress) {
 const fmtBytes = n => n >= 1048576 ? `${(n / 1048576).toFixed(1)}MB` : `${(n / 1024).toFixed(0)}KB`
 
 // Extension VOD: start background download, return token immediately
+function isSoopUrl(url) {
+  return /soop\.com|sooplive\.co\.kr/.test(url)
+}
+
 app.post('/api/start-vod', async (req, res) => {
-  const { url, nidAut = '', nidSes = '' } = req.body
-  if (!url?.match(/chzzk\.naver\.com\/video\/\w+/))
-    return res.status(400).json({ error: '치지직 VOD URL만 가능합니다.' })
+  const { url, nidAut = '', nidSes = '', soopCookie = '' } = req.body
+  const isSoop = isSoopUrl(url)
+  if (!url?.match(/chzzk\.naver\.com\/video\/\w+/) && !isSoop)
+    return res.status(400).json({ error: '치지직 또는 숲 VOD URL만 가능합니다.' })
 
   const token = crypto.randomBytes(16).toString('hex')
-  const job = { status: 'running', log: [], progress: 0, error: null, path: null, filename: null, startedAt: Date.now() }
+  const job = { url, status: 'running', log: [], progress: 0, error: null, path: null, filename: null, startedAt: Date.now() }
   vodJobs.set(token, job)
 
   res.json({ token })
@@ -192,10 +197,16 @@ app.post('/api/start-vod', async (req, res) => {
     const args = []
     const aut = cleanCookieValue(nidAut)
     const ses = cleanCookieValue(nidSes)
-    if (aut && ses) args.push('--add-header', `Cookie:NID_AUT=${aut}; NID_SES=${ses}`)
+    if (isSoopUrl(url)) {
+      if (soopCookie) args.push('--add-header', `Cookie:${soopCookie}`)
+      args.push('--add-header', 'Referer:https://www.soop.com/')
+    } else {
+      if (aut && ses) args.push('--add-header', `Cookie:NID_AUT=${aut}; NID_SES=${ses}`)
+      args.push('--add-header', 'Referer:https://chzzk.naver.com/')
+    }
     args.push('-f', 'bv+ba/b', '--merge-output-format', 'mp4')
     args.push('-o', tmpTemplate)
-    args.push('--no-check-certificates', '--add-header', 'Referer:https://chzzk.naver.com/', '--newline')
+    args.push('--no-check-certificates', '--newline')
     args.push(url)
 
     args.push('--ffmpeg-location', ffmpegPath)
@@ -254,9 +265,31 @@ app.get('/api/vod-status/:token', (req, res) => {
   })
 })
 
+// Active VOD jobs list for React UI
+app.get('/api/active-jobs', (req, res) => {
+  const list = []
+  for (const [token, job] of vodJobs.entries()) {
+    if (Date.now() - job.startedAt < 2 * 60 * 60 * 1000) {
+      list.push({
+        token,
+        url: job.url || '',
+        status: job.status,
+        progress: job.progress,
+        error: job.error,
+        log: job.log.slice(-1)[0] || '',
+        startedAt: job.startedAt
+      })
+    }
+  }
+  list.sort((a, b) => b.startedAt - a.startedAt)
+  res.json(list)
+})
+
 app.post('/download', async (req, res) => {
-  const { url, quality = 'best', nidAut = '', nidSes = '' } = req.body
-  if (!url?.includes('chzzk.naver.com')) return res.status(400).json({ error: '치지직 URL만 가능합니다.' })
+  const { url, quality = 'best', nidAut = '', nidSes = '', soopCookie = '' } = req.body
+  const isChzzk = url?.includes('chzzk.naver.com')
+  const isSoop = isSoopUrl(url || '')
+  if (!isChzzk && !isSoop) return res.status(400).json({ error: '치지직 또는 숲 URL만 가능합니다.' })
 
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
@@ -267,7 +300,67 @@ app.post('/download', async (req, res) => {
   try {
     const clipMatch = url.match(/chzzk\.naver\.com\/clips\/([A-Za-z0-9_-]+)/)
 
-    if (clipMatch) {
+    if (isSoop) {
+      // ====== SOOP ======
+      send('log', '⬇️ 숲(SOOP) 다운로드 시작...')
+
+      const token = crypto.randomBytes(16).toString('hex')
+      const tmpTemplate = path.join(os.tmpdir(), `soop_${token}.%(ext)s`)
+      const args = []
+
+      if (soopCookie) args.push('--add-header', `Cookie:${soopCookie}`)
+      args.push('--add-header', 'Referer:https://www.soop.com/')
+
+      const fmt = quality === 'best'
+        ? 'bv+ba/b'
+        : `bestvideo[height<=${quality}]+bestaudio/best[height<=${quality}]`
+
+      args.push('-f', fmt, '--merge-output-format', 'mp4')
+      args.push('-o', tmpTemplate)
+      args.push('--no-check-certificates', '--newline')
+      args.push(url)
+      args.push('--ffmpeg-location', ffmpegPath)
+
+      const proc = spawn(ytDlpPath, args)
+      let actualPath = null
+
+      proc.stdout.on('data', data => {
+        const text = data.toString()
+        const dest = text.match(/\[download\] Destination: (.+)/)
+        if (dest) actualPath = dest[1].trim()
+        const merge = text.match(/Merging formats into "(.+)"/)
+        if (merge) actualPath = merge[1].trim()
+        const pctM = text.match(/(\d+\.?\d*)%/)
+        if (pctM) send('progress', parseFloat(pctM[1]))
+        text.split('\n').forEach(l => { if (l.trim()) send('log', l.trim()) })
+      })
+      proc.stderr.on('data', data => {
+        data.toString().split('\n').forEach(l => { if (l.trim()) send('err', l.trim()) })
+      })
+      proc.on('close', code => {
+        if (code === 0) {
+          if (!actualPath) {
+            const found = fs.readdirSync(os.tmpdir()).find(f => f.startsWith(`soop_${token}`))
+            if (found) actualPath = path.join(os.tmpdir(), found)
+          }
+          if (actualPath && fs.existsSync(actualPath)) {
+            const ext = path.extname(actualPath).slice(1) || 'mp4'
+            pendingFiles.set(token, { path: actualPath, filename: `soop_download.${ext}`, createdAt: Date.now() })
+            send('progress', 100)
+            send('file_ready', token)
+            send('done', 'OK')
+          } else {
+            send('err', '❌ 다운로드 파일을 찾지 못했습니다.')
+            send('done', 'ERROR')
+          }
+        } else {
+          send('done', 'ERROR')
+        }
+        res.end()
+      })
+      return
+
+    } else if (clipMatch) {
       // ====== CLIP ======
       const clipId = clipMatch[1]
       if (!nidAut || !nidSes) throw new Error('클립 다운로드에는 NID_AUT와 NID_SES 쿠키가 필요합니다.')

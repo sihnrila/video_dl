@@ -8,6 +8,8 @@
     "https://chzzk.naver.com/*",
     "https://api.chzzk.naver.com/*",
     "https://api-videohub.naver.com/*",
+    "https://*.soop.com/*",
+    "https://*.sooplive.co.kr/*",
     "http://localhost:5555/*"
   ],
   "action": {
@@ -19,7 +21,7 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://chzzk.naver.com/*"],
+      "matches": ["https://chzzk.naver.com/*", "https://*.soop.com/*", "https://*.sooplive.co.kr/*"],
       "js": ["content.js"],
       "run_at": "document_idle"
     }

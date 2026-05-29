@@ -8,11 +8,32 @@ function App() {
     // 공유 쿠키 (localStorage 유지)
     const [nidAut, setNidAut] = useState(() => localStorage.getItem('nid_aut') || '');
     const [nidSes, setNidSes] = useState(() => localStorage.getItem('nid_ses') || '');
+    const [soopCookie, setSoopCookie] = useState(() => localStorage.getItem('soop_cookie') || '');
     const [showCookieHelp, setShowCookieHelp] = useState(false);
     const [cookieCheckState, setCookieCheckState] = useState(null); // null | 'checking' | 'valid' | 'invalid'
     const [cookieCheckMsg, setCookieCheckMsg] = useState('');
     const [bookmarkletCopied, setBookmarkletCopied] = useState(false);
     const [cookieSavedNotice, setCookieSavedNotice] = useState(false);
+
+    // 백그라운드 다운로드 작업 (확장 프로그램 연동용)
+    const [activeJobs, setActiveJobs] = useState([]);
+
+    useEffect(() => {
+        const pollJobs = async () => {
+            try {
+                const res = await fetch('/api/active-jobs');
+                if (res.ok) {
+                    const data = await res.json();
+                    setActiveJobs(data);
+                }
+            } catch (e) {
+                console.error('Failed to poll active jobs:', e);
+            }
+        };
+        pollJobs();
+        const interval = setInterval(pollJobs, 2000);
+        return () => clearInterval(interval);
+    }, []);
 
     // 다운로드 탭
     const [url, setUrl] = useState('');
@@ -53,8 +74,10 @@ function App() {
 
     useEffect(() => { localStorage.setItem('nid_aut', nidAut); }, [nidAut]);
     useEffect(() => { localStorage.setItem('nid_ses', nidSes); }, [nidSes]);
+    useEffect(() => { localStorage.setItem('soop_cookie', soopCookie); }, [soopCookie]);
 
     const hasCookie = !!(nidAut && nidSes);
+    const isSoopUrl = (u) => /soop\.com|sooplive\.co\.kr/.test(u);
 
     const checkCookie = async () => {
         if (!hasCookie) return;
@@ -156,6 +179,7 @@ function App() {
     }, []);
 
     const isClip = url.includes('/clips/');
+    const isSoop = isSoopUrl(url);
 
     useEffect(() => {
         logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -167,7 +191,7 @@ function App() {
 
     const handleDownload = async () => {
         if (!url) return alert('URL을 입력해주세요.');
-        if (!url.includes('chzzk.naver.com')) return alert('치지직 URL만 가능합니다.');
+        if (!url.includes('chzzk.naver.com') && !isSoopUrl(url)) return alert('치지직 또는 숲(soop.com) URL만 가능합니다.');
         if (isClip && (!nidAut || !nidSes)) return alert('클립 다운로드에는 NID_AUT와 NID_SES가 필요합니다.');
 
         setDownloading(true);
@@ -179,7 +203,7 @@ function App() {
             const response = await fetch('/download', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url, quality, nidAut, nidSes })
+                body: JSON.stringify({ url, quality, nidAut, nidSes, soopCookie })
             });
 
             if (!response.ok) {
@@ -269,7 +293,7 @@ function App() {
         <div className="container">
             <div className="glass-card">
                 <h1>CHZZK DL</h1>
-                <p className="subtitle">치지직 고화질 영상 다운로더</p>
+                <p className="subtitle">{isSoop ? '🌲 숲(SOOP) + 치지직 고화질 영상 다운로더' : '치지직 + 숲 고화질 영상 다운로더'}</p>
 
                 {cookieSavedNotice && (
                     <div className="cookie-saved-toast">✅ 쿠키가 자동으로 저장되었습니다!</div>
@@ -321,7 +345,7 @@ function App() {
                             <p className="help-note">💾 한 번 입력하면 자동으로 저장되어 다음에 다시 입력할 필요 없어요</p>
                         </div>
                     )}
-                    <div className="cookie-inputs">
+                    {!isSoop && <div className="cookie-inputs">
                         <div className="input-group">
                             <label>NID_AUT</label>
                             <div className="input-wrapper">
@@ -338,7 +362,17 @@ function App() {
                                     value={nidSes} onChange={e => { setNidSes(e.target.value); setCookieCheckState(null); }} />
                             </div>
                         </div>
-                    </div>
+                    </div>}
+                    {isSoop && <div className="cookie-inputs">
+                        <div className="input-group">
+                            <label>🌲 숲(SOOP) 쿠키 <span className="optional">(선택 · 성인/구독자 전용 영상에 필요)</span></label>
+                            <div className="input-wrapper">
+                                <span className="input-icon">🔑</span>
+                                <input type="password" placeholder="PHPSESSID=xxx (F12→Application→Cookies→soop.com에서 복사)"
+                                    value={soopCookie} onChange={e => setSoopCookie(e.target.value)} />
+                            </div>
+                        </div>
+                    </div>}
                 </div>
 
                 {/* PIN / QR 공유 섹션 */}
@@ -392,7 +426,7 @@ function App() {
                             <div className="input-wrapper">
                                 <span className="input-icon">🔗</span>
                                 <input type="text"
-                                    placeholder="https://chzzk.naver.com/clips/... 또는 /video/..."
+                                    placeholder="https://chzzk.naver.com/clips/... 또는 /video/... 또는 숲(soop.com) URL"
                                     value={url} onChange={e => setUrl(e.target.value)}
                                     disabled={downloading} />
                             </div>
@@ -495,6 +529,37 @@ function App() {
                                 )}
                             </div>
                         )}
+                    </div>
+                )}
+
+                {/* 백그라운드 다운로드 목록 (익스텐션 연동) */}
+                {activeJobs.length > 0 && (
+                    <div className="active-jobs-section">
+                        <h3 className="section-title">⚡ 백그라운드 다운로드 진행 상황 <span className="title-desc">(익스텐션 연동됨)</span></h3>
+                        <div className="active-jobs-list">
+                            {activeJobs.map(job => (
+                                <div key={job.token} className="active-job-item">
+                                    <div className="job-meta">
+                                        <span className="job-url" title={job.url}>{job.url}</span>
+                                        <span className={`job-status-badge ${job.status}`}>
+                                            {job.status === 'running' ? '⏳ 다운로드 중' : job.status === 'done' ? '✅ 완료' : '❌ 오류'}
+                                        </span>
+                                    </div>
+                                    <div className="job-progress-row">
+                                        <div className="job-progress-bar-bg">
+                                            <div className={`job-progress-bar-fill ${job.status}`} style={{ width: `${job.progress}%` }}></div>
+                                        </div>
+                                        <span className="job-progress-pct">{job.progress.toFixed(0)}%</span>
+                                    </div>
+                                    {job.log && <div className="job-log">{job.log}</div>}
+                                    {job.status === 'done' && (
+                                        <button className="job-save-btn" onClick={() => triggerDownload(`/file/${job.token}`)}>
+                                            ⬇️ 내 PC에 저장
+                                        </button>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 )}
             </div>

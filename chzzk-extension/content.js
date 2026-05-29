@@ -5,6 +5,10 @@ function parsePage() {
   const url = location.href
   const path = location.pathname
 
+  if (/soop\.com|sooplive\.co\.kr/.test(url)) {
+    return { type: 'soop', url }
+  }
+
   // /clips/{clipId}
   const clipMatch = path.match(/^\/clips\/([A-Za-z0-9_-]+)/)
   if (clipMatch) return { type: 'clip', clipId: clipMatch[1] }

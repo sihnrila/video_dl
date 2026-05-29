@@ -11,6 +11,20 @@ async function getNidCookies() {
   return { nidAut: aut?.value || '', nidSes: ses?.value || '' }
 }
 
+async function getSoopCookies() {
+  try {
+    const [c1, c2] = await Promise.all([
+      chrome.cookies.getAll({ domain: 'soop.com' }),
+      chrome.cookies.getAll({ domain: 'sooplive.co.kr' })
+    ])
+    const all = [...(c1 || []), ...(c2 || [])]
+    return all.map(c => `${c.name}=${c.value}`).join('; ')
+  } catch (e) {
+    console.error('Failed to get SOOP cookies:', e)
+    return ''
+  }
+}
+
 async function apiGet(url, nidAut, nidSes) {
   const headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -167,6 +181,7 @@ async function downloadClip(clipId, quality) {
 
 // ── VOD via local server ──────────────────────────────────────────────
 const LOCAL_SERVER = 'http://localhost:5555'
+const activeVodDownloads = new Map() // url -> token
 
 async function isServerRunning() {
   try {
@@ -177,16 +192,21 @@ async function isServerRunning() {
 
 async function startVodDownload(url) {
   const { nidAut, nidSes } = await getNidCookies()
+  const soopCookie = await getSoopCookies()
   const r = await fetch(`${LOCAL_SERVER}/api/start-vod`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url, nidAut, nidSes })
+    body: JSON.stringify({ url, nidAut, nidSes, soopCookie })
   })
   if (!r.ok) {
     const j = await r.json().catch(() => ({}))
     throw new Error(j.error || `서버 오류 (${r.status})`)
   }
-  return r.json()  // { token }
+  const res = await r.json()  // { token }
+  if (res?.token) {
+    activeVodDownloads.set(url, res.token)
+  }
+  return res
 }
 
 async function getVodStatus(token) {
@@ -212,6 +232,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         case 'getLiveDetail':   return await getLiveDetail(msg.channelId)
         case 'startLiveRecord': return await startLiveRecord(msg.channelId)
         case 'stopLiveRecord':  return await stopLiveRecord(msg.token)
+        case 'getActiveDownload': return { token: activeVodDownloads.get(msg.url) || null }
+        case 'clearActiveDownload':
+          activeVodDownloads.delete(msg.url)
+          return { success: true }
         default: throw new Error(`Unknown action: ${msg.action}`)
       }
     } catch (err) {

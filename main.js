@@ -11,7 +11,7 @@ async function createWindow() {
     mainWindow = new BrowserWindow({
         width: 1024,
         height: 768,
-        title: 'CHZZK DL',
+        title: 'CHZZK & SOOP DL',
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true
