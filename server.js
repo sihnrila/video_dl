@@ -29,9 +29,6 @@ app.use((req, res, next) => {
 // Temp file registry: token → { path, filename, createdAt }
 const pendingFiles = new Map()
 
-const BLOCKED_CHANNEL_ID = '4b0b18f08726645af5ca01da1e0413a9'
-const BLOCK_MESSAGE = '🚫 [경고] 레니웨이(레니아워)의 잔소리가 너무 심해 해당 채널의 다운로드는 영구 차단되었습니다.'
-
 // VOD job registry: token → { status, log[], progress, error, path, filename, startedAt }
 const vodJobs = new Map()
 setInterval(() => {
@@ -112,11 +109,6 @@ async function resolveClipUrls(clipId, nidAut, nidSes) {
   const content = json?.content
   if (!content) throw new Error('API 응답에 content가 없습니다.')
 
-  const ownerId = content.ownerChannelId || content.optionalProperty?.ownerChannel?.channelId
-  if (ownerId && ownerId.toLowerCase() === BLOCKED_CHANNEL_ID) {
-    throw new Error(BLOCK_MESSAGE)
-  }
-
   const videoId = content.videoId
   const title = content.clipTitle
   if (!videoId) throw new Error(`videoId를 찾지 못했습니다. 응답 키: ${Object.keys(content).join(', ')}`)
@@ -192,21 +184,6 @@ app.post('/api/start-vod', async (req, res) => {
   const isSoop = isSoopUrl(url)
   if (!url?.match(/chzzk\.naver\.com\/video\/\w+/) && !isSoop)
     return res.status(400).json({ error: '치지직 또는 숲 VOD URL만 가능합니다.' })
-
-  // Pre-check for blocked channel VOD
-  const vodMatch = url?.match(/chzzk\.naver\.com\/video\/(\w+)/)
-  if (vodMatch) {
-    const videoNo = vodMatch[1]
-    try {
-      const { json } = await fetchApi('api.chzzk.naver.com', `/service/v2/videos/${videoNo}`, nidAut, nidSes)
-      const chId = json?.content?.channel?.channelId
-      if (chId && chId.toLowerCase() === BLOCKED_CHANNEL_ID) {
-        return res.status(403).json({ error: BLOCK_MESSAGE })
-      }
-    } catch (e) {
-      console.error('Failed to pre-check VOD channel:', e)
-    }
-  }
 
   const token = crypto.randomBytes(16).toString('hex')
   const job = { url, status: 'running', log: [], progress: 0, error: null, path: null, filename: null, startedAt: Date.now() }
@@ -419,21 +396,6 @@ app.post('/download', async (req, res) => {
 
     } else if (url.match(/chzzk\.naver\.com\/video\/\w+/)) {
       // ====== VOD ======
-      const vodMatch = url.match(/chzzk\.naver\.com\/video\/(\w+)/)
-      if (vodMatch) {
-        const videoNo = vodMatch[1]
-        try {
-          const { json } = await fetchApi('api.chzzk.naver.com', `/service/v2/videos/${videoNo}`, nidAut, nidSes)
-          const chId = json?.content?.channel?.channelId
-          if (chId && chId.toLowerCase() === BLOCKED_CHANNEL_ID) {
-            throw new Error(BLOCK_MESSAGE)
-          }
-        } catch (e) {
-          if (e.message === BLOCK_MESSAGE) throw e
-          console.error('Failed to pre-check VOD channel:', e)
-        }
-      }
-
       send('log', '⬇️ VOD 다운로드 시작...')
 
       const token = crypto.randomBytes(16).toString('hex')
@@ -513,11 +475,6 @@ app.get('/api/channel-clips', async (req, res) => {
   const urlMatch = channelId.match(/chzzk\.naver\.com\/([0-9a-fA-F]{20,})/i)
   if (urlMatch) channelId = urlMatch[1]
 
-  const isLeni = channelId.toLowerCase() === 'reniehour' || channelId.toLowerCase() === BLOCKED_CHANNEL_ID
-  if (isLeni) {
-    return res.status(403).json({ error: BLOCK_MESSAGE })
-  }
-
   if (!channelId.match(/^[0-9a-fA-F]{20,}$/i))
     return res.status(400).json({ error: '올바른 채널 URL을 입력해주세요. (예: https://chzzk.naver.com/8421eba...)' })
 
@@ -556,11 +513,6 @@ const liveJobs = new Map()
 app.post('/api/start-live', async (req, res) => {
   const { channelId, nidAut = '', nidSes = '' } = req.body
   if (!channelId) return res.status(400).json({ error: '채널 ID가 필요합니다.' })
-
-  const isLeni = channelId.toLowerCase() === 'reniehour' || channelId.toLowerCase() === BLOCKED_CHANNEL_ID
-  if (isLeni) {
-    return res.status(403).json({ error: BLOCK_MESSAGE })
-  }
 
   const token = crypto.randomBytes(16).toString('hex')
   const job = { status: 'running', log: [], progress: 0, error: null, path: null, filename: null, startedAt: Date.now(), proc: null }
