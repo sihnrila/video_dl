@@ -6,6 +6,11 @@ import fs from 'fs'
 import https from 'https'
 import crypto from 'crypto'
 import { fileURLToPath } from 'url'
+import ffmpegStatic from 'ffmpeg-static'
+import { ensureYtDlp } from './ytdlp-manager.js'
+
+let ytDlpPath = 'yt-dlp'
+let ffmpegPath = ffmpegStatic
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -193,7 +198,8 @@ app.post('/api/start-vod', async (req, res) => {
     args.push('--no-check-certificates', '--add-header', 'Referer:https://chzzk.naver.com/', '--newline')
     args.push(url)
 
-    const proc = spawn('yt-dlp', args)
+    args.push('--ffmpeg-location', ffmpegPath)
+    const proc = spawn(ytDlpPath, args)
     let actualPath = null
 
     proc.stdout.on('data', data => {
@@ -316,7 +322,8 @@ app.post('/download', async (req, res) => {
       args.push('--no-check-certificates', '--add-header', 'Referer:https://chzzk.naver.com/', '--newline')
       args.push(url)
 
-      const proc = spawn('yt-dlp', args)
+      args.push('--ffmpeg-location', ffmpegPath)
+      const proc = spawn(ytDlpPath, args)
       let actualPath = null
 
       proc.stdout.on('data', data => {
@@ -433,7 +440,8 @@ app.post('/api/start-live', async (req, res) => {
     args.push('--no-check-certificates', '--add-header', 'Referer:https://chzzk.naver.com/', '--newline')
     args.push(url)
 
-    const proc = spawn('yt-dlp', args)
+    args.push('--ffmpeg-location', ffmpegPath)
+    const proc = spawn(ytDlpPath, args)
     job.proc = proc
     let actualPath = null
 
@@ -515,5 +523,24 @@ app.post('/api/check-cookie', async (req, res) => {
   }
 })
 
-const PORT = process.env.PORT || 5555
-app.listen(PORT, () => console.log(`\n🚀 http://localhost:${PORT}\n`))
+export async function startServer({ port = 5555, userDataPath = os.tmpdir() } = {}) {
+  try {
+    if (!fs.existsSync(userDataPath)) fs.mkdirSync(userDataPath, { recursive: true })
+    ytDlpPath = await ensureYtDlp(userDataPath)
+  } catch (err) {
+    console.error('Failed to prepare yt-dlp:', err)
+  }
+  return new Promise(resolve => {
+    const server = app.listen(port, () => {
+      console.log(`\n🚀 http://localhost:${port}\n`)
+      resolve(server)
+    })
+  })
+}
+
+const scriptPath = path.resolve(process.argv[1] || '')
+const currentFile = path.resolve(fileURLToPath(import.meta.url))
+if (scriptPath === currentFile) {
+  const defaultDir = path.join(os.homedir(), '.chzzk-dl')
+  startServer({ port: process.env.PORT || 5555, userDataPath: defaultDir })
+}

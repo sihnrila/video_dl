@@ -2,13 +2,37 @@
   "name": "chzzk-dl",
   "version": "1.0.0",
   "description": "Chzzk Video Downloader",
-  "main": "server.js",
+  "main": "main.js",
   "type": "module",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "start:electron": "electron .",
+    "build:mac": "electron-builder --mac",
+    "build:win": "electron-builder --win"
+  },
+  "build": {
+    "appId": "com.chzzk-dl.app",
+    "productName": "CHZZK DL",
+    "mac": {
+      "target": "dmg"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "directories": {
+      "output": "dist"
+    }
   },
   "dependencies": {
+    "axios": "^1.16.1",
     "express": "^4.22.1",
+    "ffmpeg-static": "^5.3.0",
     "puppeteer-core": "^24.43.0"
+  },
+  "devDependencies": {
+    "cross-env": "^10.1.0",
+    "electron": "^41.7.1",
+    "electron-builder": "^26.8.1",
+    "wait-on": "^9.0.10"
   }
 }
