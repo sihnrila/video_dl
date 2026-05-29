@@ -179,15 +179,8 @@ function isSoopUrl(url) {
   return /soop\.com|sooplive\.co\.kr/.test(url)
 }
 
-function isRailwayUrl(url) {
-  return /railway\.com|railway\.app/.test(url)
-}
-
 app.post('/api/start-vod', async (req, res) => {
   const { url, nidAut = '', nidSes = '', soopCookie = '' } = req.body
-  if (isRailwayUrl(url || '')) {
-    return res.status(403).json({ error: '🚫 Railway(railway.com)은 다운로드 대상 사이트가 아닙니다.' })
-  }
   const isSoop = isSoopUrl(url)
   if (!url?.match(/chzzk\.naver\.com\/video\/\w+/) && !isSoop)
     return res.status(400).json({ error: '치지직 또는 숲 VOD URL만 가능합니다.' })
@@ -294,9 +287,6 @@ app.get('/api/active-jobs', (req, res) => {
 
 app.post('/download', async (req, res) => {
   const { url, quality = 'best', nidAut = '', nidSes = '', soopCookie = '' } = req.body
-  if (isRailwayUrl(url || '')) {
-    return res.status(403).json({ error: '🚫 Railway(railway.com)은 다운로드 대상 사이트가 아닙니다.' })
-  }
   const isChzzk = url?.includes('chzzk.naver.com')
   const isSoop = isSoopUrl(url || '')
   if (!isChzzk && !isSoop) return res.status(400).json({ error: '치지직 또는 숲 URL만 가능합니다.' })
