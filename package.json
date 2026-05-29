@@ -14,6 +14,13 @@
   "build": {
     "appId": "com.chzzk-dl.app",
     "productName": "CHZZK DL",
+    "files": [
+      "main.js",
+      "server.js",
+      "ytdlp-manager.js",
+      "public/**/*",
+      "node_modules/**/*"
+    ],
     "mac": {
       "target": "dmg"
     },
