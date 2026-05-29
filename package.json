@@ -1,6 +1,7 @@
 {
   "name": "chzzk-dl",
   "version": "1.0.0",
+  "author": "CHZZK DL",
   "description": "Chzzk Video Downloader",
   "main": "main.js",
   "type": "module",
