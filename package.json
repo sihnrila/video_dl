@@ -8,8 +8,8 @@
   "scripts": {
     "start": "node server.js",
     "start:electron": "electron .",
-    "build:mac": "cross-env NODE_OPTIONS=--no-warnings electron-builder --mac",
-    "build:win": "cross-env NODE_OPTIONS=--no-warnings electron-builder --win"
+    "build:mac": "cross-env NODE_OPTIONS=--no-warnings npm_config_loglevel=error electron-builder --mac",
+    "build:win": "cross-env NODE_OPTIONS=--no-warnings npm_config_loglevel=error electron-builder --win"
   },
   "build": {
     "appId": "com.chzzk-dl.app",
