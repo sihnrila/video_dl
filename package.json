@@ -8,10 +8,12 @@
   "scripts": {
     "start": "node server.js",
     "start:electron": "electron .",
-    "build:mac": "electron-builder --mac",
-    "build:win": "electron-builder --win",
-    "release:mac": "electron-builder --mac --publish always",
-    "release:win": "electron-builder --win --publish always"
+    "fetch-ffmpeg:mac": "cross-env npm_config_platform=darwin npm_config_arch=arm64 node node_modules/ffmpeg-static/install.js",
+    "fetch-ffmpeg:win": "cross-env npm_config_platform=win32 npm_config_arch=x64 node node_modules/ffmpeg-static/install.js",
+    "build:mac": "npm run fetch-ffmpeg:mac && electron-builder --mac",
+    "build:win": "npm run fetch-ffmpeg:win && electron-builder --win --x64",
+    "release:mac": "npm run fetch-ffmpeg:mac && electron-builder --mac --publish always",
+    "release:win": "npm run fetch-ffmpeg:win && electron-builder --win --x64 --publish always"
   },
   "build": {
     "appId": "com.chzzk-dl.app",
