@@ -5,7 +5,7 @@ function parsePage() {
   const url = location.href
   const path = location.pathname
 
-  if (/soop\.com|sooplive\.co\.kr/.test(url)) {
+  if (/soop\.com|sooplive\.com|sooplive\.co\.kr/.test(url)) {
     return { type: 'soop', url }
   }
 

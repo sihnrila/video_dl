@@ -176,7 +176,7 @@ const fmtBytes = n => n >= 1048576 ? `${(n / 1048576).toFixed(1)}MB` : `${(n / 1
 
 // Extension VOD: start background download, return token immediately
 function isSoopUrl(url) {
-  return /soop\.com|sooplive\.co\.kr/.test(url)
+  return /soop\.com|sooplive\.com|sooplive\.co\.kr/.test(url)
 }
 
 app.post('/api/start-vod', async (req, res) => {

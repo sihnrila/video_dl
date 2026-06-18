@@ -41,7 +41,7 @@ function showStatus(msg, type = 'info') {
 function hideStatus() { $('dlStatus').style.display = 'none' }
 
 function isSoopUrl(url) {
-  return /soop\.com|sooplive\.co\.kr/.test(url)
+  return /soop\.com|sooplive\.com|sooplive\.co\.kr/.test(url)
 }
 
 // ── Tab 1: Current page ───────────────────────────────────────────────

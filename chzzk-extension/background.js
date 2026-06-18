@@ -13,11 +13,12 @@ async function getNidCookies() {
 
 async function getSoopCookies() {
   try {
-    const [c1, c2] = await Promise.all([
+    const [c1, c2, c3] = await Promise.all([
       chrome.cookies.getAll({ domain: 'soop.com' }),
+      chrome.cookies.getAll({ domain: 'sooplive.com' }),
       chrome.cookies.getAll({ domain: 'sooplive.co.kr' })
     ])
-    const all = [...(c1 || []), ...(c2 || [])]
+    const all = [...(c1 || []), ...(c2 || []), ...(c3 || [])]
     return all.map(c => `${c.name}=${c.value}`).join('; ')
   } catch (e) {
     console.error('Failed to get SOOP cookies:', e)

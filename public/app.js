@@ -77,7 +77,7 @@ function App() {
     useEffect(() => { localStorage.setItem('soop_cookie', soopCookie); }, [soopCookie]);
 
     const hasCookie = !!(nidAut && nidSes);
-    const isSoopUrl = (u) => /soop\.com|sooplive\.co\.kr/.test(u);
+    const isSoopUrl = (u) => /soop\.com|sooplive\.com|sooplive\.co\.kr/.test(u);
 
     const checkCookie = async () => {
         if (!hasCookie) return;
