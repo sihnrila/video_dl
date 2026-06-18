@@ -11,21 +11,6 @@ async function getNidCookies() {
   return { nidAut: aut?.value || '', nidSes: ses?.value || '' }
 }
 
-async function getSoopCookies() {
-  try {
-    const [c1, c2, c3] = await Promise.all([
-      chrome.cookies.getAll({ domain: 'soop.com' }),
-      chrome.cookies.getAll({ domain: 'sooplive.com' }),
-      chrome.cookies.getAll({ domain: 'sooplive.co.kr' })
-    ])
-    const all = [...(c1 || []), ...(c2 || []), ...(c3 || [])]
-    return all.map(c => `${c.name}=${c.value}`).join('; ')
-  } catch (e) {
-    console.error('Failed to get SOOP cookies:', e)
-    return ''
-  }
-}
-
 async function apiGet(url, nidAut, nidSes) {
   const headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -193,11 +178,10 @@ async function isServerRunning() {
 
 async function startVodDownload(url) {
   const { nidAut, nidSes } = await getNidCookies()
-  const soopCookie = await getSoopCookies()
   const r = await fetch(`${LOCAL_SERVER}/api/start-vod`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url, nidAut, nidSes, soopCookie })
+    body: JSON.stringify({ url, nidAut, nidSes })
   })
   if (!r.ok) {
     const j = await r.json().catch(() => ({}))

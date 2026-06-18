@@ -8,7 +8,8 @@ function App() {
     // 공유 쿠키 (localStorage 유지)
     const [nidAut, setNidAut] = useState(() => localStorage.getItem('nid_aut') || '');
     const [nidSes, setNidSes] = useState(() => localStorage.getItem('nid_ses') || '');
-    const [soopCookie, setSoopCookie] = useState(() => localStorage.getItem('soop_cookie') || '');
+    const [soopUsername, setSoopUsername] = useState(() => localStorage.getItem('soop_username') || '');
+    const [soopPassword, setSoopPassword] = useState(() => localStorage.getItem('soop_password') || '');
     const [showCookieHelp, setShowCookieHelp] = useState(false);
     const [cookieCheckState, setCookieCheckState] = useState(null); // null | 'checking' | 'valid' | 'invalid'
     const [cookieCheckMsg, setCookieCheckMsg] = useState('');
@@ -74,7 +75,8 @@ function App() {
 
     useEffect(() => { localStorage.setItem('nid_aut', nidAut); }, [nidAut]);
     useEffect(() => { localStorage.setItem('nid_ses', nidSes); }, [nidSes]);
-    useEffect(() => { localStorage.setItem('soop_cookie', soopCookie); }, [soopCookie]);
+    useEffect(() => { localStorage.setItem('soop_username', soopUsername); }, [soopUsername]);
+    useEffect(() => { localStorage.setItem('soop_password', soopPassword); }, [soopPassword]);
 
     const hasCookie = !!(nidAut && nidSes);
     const isSoopUrl = (u) => /soop\.com|sooplive\.com|sooplive\.co\.kr/.test(u);
@@ -203,7 +205,7 @@ function App() {
             const response = await fetch('/download', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url, quality, nidAut, nidSes, soopCookie })
+                body: JSON.stringify({ url, quality, nidAut, nidSes, soopUsername, soopPassword })
             });
 
             if (!response.ok) {
@@ -238,18 +240,26 @@ function App() {
         setClipsError('');
         if (reset) { setClips([]); setNextCursor(null); setTotalLoaded(0); }
 
+        const isSoopChannel = isSoopUrl(channelInput);
+
         try {
-            const params = new URLSearchParams({ channelId: channelInput.trim(), size: '20', nidAut, nidSes });
+            const params = new URLSearchParams({ channelId: channelInput.trim(), size: '20' });
+            if (!isSoopChannel) { params.set('nidAut', nidAut); params.set('nidSes', nidSes); }
             if (!reset && nextCursor) params.set('cursor', nextCursor);
 
-            const res = await fetch(`/api/channel-clips?${params}`);
+            const endpoint = isSoopChannel ? '/api/soop-vods' : '/api/channel-clips';
+            const res = await fetch(`${endpoint}?${params}`);
             const data = await res.json();
-            if (!res.ok) throw new Error(data.error || '클립 목록을 불러오지 못했습니다.');
+            if (!res.ok) throw new Error(data.error || '목록을 불러오지 못했습니다.');
 
-            setClips(prev => reset ? data.clips : [...prev, ...data.clips]);
+            const newItems = isSoopChannel
+                ? data.vods.map(v => ({ clipUID: v.id, clipTitle: v.title, thumbnailImageUrl: null, duration: null, channel: null, _soopUrl: v.url }))
+                : data.clips;
+
+            setClips(prev => reset ? newItems : [...prev, ...newItems]);
             setNextCursor(data.nextCursor);
             setHasNext(data.hasNext);
-            setTotalLoaded(prev => reset ? data.clips.length : prev + data.clips.length);
+            setTotalLoaded(prev => reset ? newItems.length : prev + newItems.length);
         } catch (err) {
             setClipsError(err.message);
         } finally {
@@ -260,15 +270,19 @@ function App() {
     const downloadChannelClip = async (clip) => {
         const clipId = clip.clipUID || clip.clipUid || clip.clipId || clip.id;
         if (!clipId) return;
-        if (!nidAut || !nidSes) { alert('클립 다운로드에는 위의 NID_AUT와 NID_SES 쿠키가 필요합니다.'); return; }
+        const isSoopVod = !!clip._soopUrl;
+        if (!isSoopVod && (!nidAut || !nidSes)) { alert('클립 다운로드에는 위의 NID_AUT와 NID_SES 쿠키가 필요합니다.'); return; }
 
         setClipStatus(prev => ({ ...prev, [clipId]: 'loading' }));
 
         try {
+            const body = isSoopVod
+                ? { url: clip._soopUrl, quality: 'best', soopUsername, soopPassword }
+                : { url: `https://chzzk.naver.com/clips/${clipId}`, quality: 'best', nidAut, nidSes };
             const response = await fetch('/download', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url: `https://chzzk.naver.com/clips/${clipId}`, quality: 'best', nidAut, nidSes })
+                body: JSON.stringify(body)
             });
 
             if (!response.ok) {
@@ -365,13 +379,22 @@ function App() {
                     </div>}
                     {isSoop && <div className="cookie-inputs">
                         <div className="input-group">
-                            <label>🌲 숲(SOOP) 쿠키 <span className="optional">(선택 · 성인/구독자 전용 영상에 필요)</span></label>
+                            <label>🌲 숲(SOOP) 아이디 <span className="optional">(선택 · 성인/구독자 전용 영상에 필요)</span></label>
                             <div className="input-wrapper">
-                                <span className="input-icon">🔑</span>
-                                <input type="password" placeholder="PHPSESSID=xxx (F12→Application→Cookies→soop.com에서 복사)"
-                                    value={soopCookie} onChange={e => setSoopCookie(e.target.value)} />
+                                <span className="input-icon">👤</span>
+                                <input type="text" placeholder="SOOP 로그인 아이디"
+                                    value={soopUsername} onChange={e => setSoopUsername(e.target.value)} />
                             </div>
                         </div>
+                        <div className="input-group">
+                            <label>🌲 숲(SOOP) 비밀번호</label>
+                            <div className="input-wrapper">
+                                <span className="input-icon">🔑</span>
+                                <input type="password" placeholder="SOOP 로그인 비밀번호"
+                                    value={soopPassword} onChange={e => setSoopPassword(e.target.value)} />
+                            </div>
+                        </div>
+                        <p className="help-note">💾 한 번 입력하면 자동 저장되어 다음 다운로드 때 자동으로 로그인됩니다. yt-dlp가 직접 로그인 처리하므로 쿠키 복사는 필요 없어요.</p>
                     </div>}
                 </div>
 
@@ -416,7 +439,7 @@ function App() {
 
                 <div className="tab-bar">
                     <button className={`tab-btn${tab === 'download' ? ' active' : ''}`} onClick={() => setTab('download')}>⬇ URL 다운로드</button>
-                    <button className={`tab-btn${tab === 'channel' ? ' active' : ''}`} onClick={() => setTab('channel')}>📋 채널 클립</button>
+                    <button className={`tab-btn${tab === 'channel' ? ' active' : ''}`} onClick={() => setTab('channel')}>📋 채널 클립/VOD</button>
                 </div>
 
                 {tab === 'download' && (
@@ -474,7 +497,7 @@ function App() {
                             <div className="input-wrapper" style={{ flex: 1 }}>
                                 <span className="input-icon">📡</span>
                                 <input type="text"
-                                    placeholder="https://chzzk.naver.com/8421eba6..."
+                                    placeholder="치지직: https://chzzk.naver.com/8421eba6... 또는 숲: https://www.sooplive.com/station/janjanoo"
                                     value={channelInput}
                                     onChange={e => setChannelInput(e.target.value)}
                                     onKeyDown={e => e.key === 'Enter' && loadClips(true)}

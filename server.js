@@ -180,7 +180,7 @@ function isSoopUrl(url) {
 }
 
 app.post('/api/start-vod', async (req, res) => {
-  const { url, nidAut = '', nidSes = '', soopCookie = '' } = req.body
+  const { url, nidAut = '', nidSes = '', soopUsername = '', soopPassword = '' } = req.body
   const isSoop = isSoopUrl(url)
   if (!url?.match(/chzzk\.naver\.com\/video\/\w+/) && !isSoop)
     return res.status(400).json({ error: '치지직 또는 숲 VOD URL만 가능합니다.' })
@@ -198,7 +198,7 @@ app.post('/api/start-vod', async (req, res) => {
     const aut = cleanCookieValue(nidAut)
     const ses = cleanCookieValue(nidSes)
     if (isSoopUrl(url)) {
-      if (soopCookie) args.push('--add-header', `Cookie:${soopCookie}`)
+      if (soopUsername && soopPassword) args.push('--username', soopUsername, '--password', soopPassword)
       args.push('--add-header', 'Referer:https://www.soop.com/')
     } else {
       if (aut && ses) args.push('--add-header', `Cookie:NID_AUT=${aut}; NID_SES=${ses}`)
@@ -286,7 +286,7 @@ app.get('/api/active-jobs', (req, res) => {
 })
 
 app.post('/download', async (req, res) => {
-  const { url, quality = 'best', nidAut = '', nidSes = '', soopCookie = '' } = req.body
+  const { url, quality = 'best', nidAut = '', nidSes = '', soopUsername = '', soopPassword = '' } = req.body
   const isChzzk = url?.includes('chzzk.naver.com')
   const isSoop = isSoopUrl(url || '')
   if (!isChzzk && !isSoop) return res.status(400).json({ error: '치지직 또는 숲 URL만 가능합니다.' })
@@ -308,7 +308,7 @@ app.post('/download', async (req, res) => {
       const tmpTemplate = path.join(os.tmpdir(), `soop_${token}.%(ext)s`)
       const args = []
 
-      if (soopCookie) args.push('--add-header', `Cookie:${soopCookie}`)
+      if (soopUsername && soopPassword) args.push('--username', soopUsername, '--password', soopPassword)
       args.push('--add-header', 'Referer:https://www.soop.com/')
 
       const fmt = quality === 'best'
@@ -495,6 +495,59 @@ app.get('/api/channel-clips', async (req, res) => {
     })
   } catch (err) {
     res.status(500).json({ error: err.message })
+  }
+})
+
+// SOOP channel VOD listing: stationId -> { entries, fetchedAt }
+const soopVodCache = new Map()
+const SOOP_VOD_CACHE_TTL = 5 * 60 * 1000
+
+function runYtDlpJson(args) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(ytDlpPath, args)
+    let out = ''
+    let err = ''
+    proc.stdout.on('data', d => { out += d.toString() })
+    proc.stderr.on('data', d => { err += d.toString() })
+    proc.on('close', code => {
+      if (code !== 0) return reject(new Error(err.trim().split('\n').filter(Boolean).pop() || `yt-dlp 종료 코드: ${code}`))
+      try { resolve(JSON.parse(out)) } catch { reject(new Error('yt-dlp 응답을 해석하지 못했습니다.')) }
+    })
+  })
+}
+
+app.get('/api/soop-vods', async (req, res) => {
+  let { channelId = '', cursor = '0', size = '20' } = req.query
+  channelId = channelId.trim()
+
+  const stationMatch = channelId.match(/(?:soop\.com|sooplive\.com|sooplive\.co\.kr)\/(?:station\/)?([A-Za-z0-9_]+)/i)
+  const stationId = stationMatch ? stationMatch[1] : channelId
+
+  if (!stationId.match(/^[A-Za-z0-9_]+$/))
+    return res.status(400).json({ error: '올바른 숲 채널 URL 또는 BJ ID를 입력해주세요. (예: https://www.sooplive.com/station/janjanoo)' })
+
+  try {
+    let cached = soopVodCache.get(stationId)
+    if (!cached || Date.now() - cached.fetchedAt > SOOP_VOD_CACHE_TTL) {
+      const vodUrl = `https://www.sooplive.com/station/${stationId}/vod`
+      const data = await runYtDlpJson(['--flat-playlist', '-J', '--no-warnings', vodUrl])
+      const entries = (data.entries || []).map(e => ({ id: String(e.id), title: e.title, url: e.url }))
+      cached = { entries, fetchedAt: Date.now() }
+      soopVodCache.set(stationId, cached)
+    }
+
+    const offset = parseInt(cursor, 10) || 0
+    const sz = parseInt(size, 10) || 20
+    const page = cached.entries.slice(offset, offset + sz)
+    const nextOffset = offset + sz
+
+    res.json({
+      vods: page,
+      nextCursor: String(nextOffset),
+      hasNext: nextOffset < cached.entries.length
+    })
+  } catch (err) {
+    res.status(500).json({ error: err.message || '채널 VOD 목록을 불러오지 못했습니다. BJ ID를 확인해주세요.' })
   }
 })
 
