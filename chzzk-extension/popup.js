@@ -44,6 +44,15 @@ function isSoopUrl(url) {
   return /soop\.com|sooplive\.com|sooplive\.co\.kr/.test(url)
 }
 
+// ── SOOP credentials (chrome.storage.local, auto-login) ────────────────
+async function loadSoopCreds() {
+  const { soop_username = '', soop_password = '' } = await chrome.storage.local.get(['soop_username', 'soop_password'])
+  return { soopUsername: soop_username, soopPassword: soop_password }
+}
+async function saveSoopCreds(soopUsername, soopPassword) {
+  await chrome.storage.local.set({ soop_username: soopUsername, soop_password: soopPassword })
+}
+
 // ── Tab 1: Current page ───────────────────────────────────────────────
 async function loadPageInfo() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
@@ -156,6 +165,11 @@ async function renderSoopPage(pageUrl) {
   const cmd = `yt-dlp --cookies-from-browser chrome "${pageUrl}"`
   $('vodCommand').textContent = cmd
 
+  show('soopAuthInputs', true)
+  const { soopUsername, soopPassword } = await loadSoopCreds()
+  $('soopUsername').value = soopUsername
+  $('soopPassword').value = soopPassword
+
   const { running } = await bg({ action: 'isServerRunning' })
   $('vodServerStatus').textContent = running
     ? '✅ 서버 연결됨 — 바로 다운로드 가능'
@@ -180,6 +194,7 @@ let vodPollTimer = null
 async function renderVodPage(videoNo, pageUrl) {
   show('pageContent', true)
   show('clipStreams', false); show('vodInfo', false); show('channelInfo', false)
+  show('soopAuthInputs', false)
   $('pageType').textContent = '📺 VOD'
   $('pageType').className = 'page-type vod'
   $('pageTitle').textContent = 'VOD 정보 불러오는 중...'
@@ -356,7 +371,15 @@ $('btnDownloadVod').addEventListener('click', async () => {
   $('btnDownloadVod').disabled = true
   $('btnDownloadVod').textContent = '⏳ 시작 중...'
   showStatus('서버에 다운로드 요청 중...', 'info')
-  const r = await bg({ action: 'startVodDownload', url })
+
+  let soopUsername = '', soopPassword = ''
+  if (isSoopUrl(url)) {
+    soopUsername = $('soopUsername').value.trim()
+    soopPassword = $('soopPassword').value
+    await saveSoopCreds(soopUsername, soopPassword)
+  }
+
+  const r = await bg({ action: 'startVodDownload', url, soopUsername, soopPassword })
   if (r?.error) {
     showStatus(`❌ ${r.error}`, 'err')
     $('btnDownloadVod').disabled = false

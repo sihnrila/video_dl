@@ -176,12 +176,12 @@ async function isServerRunning() {
   } catch { return false }
 }
 
-async function startVodDownload(url) {
+async function startVodDownload(url, soopUsername = '', soopPassword = '') {
   const { nidAut, nidSes } = await getNidCookies()
   const r = await fetch(`${LOCAL_SERVER}/api/start-vod`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url, nidAut, nidSes })
+    body: JSON.stringify({ url, nidAut, nidSes, soopUsername, soopPassword })
   })
   if (!r.ok) {
     const j = await r.json().catch(() => ({}))
@@ -212,7 +212,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         case 'getChannelInfo':  return await getChannelInfo(msg.channelId)
         case 'downloadClip':    return await downloadClip(msg.clipId, msg.quality || 'best')
         case 'isServerRunning': return { running: await isServerRunning() }
-        case 'startVodDownload': return await startVodDownload(msg.url)
+        case 'startVodDownload': return await startVodDownload(msg.url, msg.soopUsername, msg.soopPassword)
         case 'getVodStatus':    return await getVodStatus(msg.token)
         case 'getLiveDetail':   return await getLiveDetail(msg.channelId)
         case 'startLiveRecord': return await startLiveRecord(msg.channelId)
