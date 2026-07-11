@@ -1,6 +1,6 @@
 {
   "name": "chzzk-dl",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "author": "CHZZK DL",
   "description": "Chzzk Video Downloader",
   "main": "main.js",
@@ -26,7 +26,10 @@
       "node_modules/**/*"
     ],
     "mac": {
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",

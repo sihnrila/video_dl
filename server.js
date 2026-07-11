@@ -52,6 +52,16 @@ setInterval(() => {
   }
 }, 600000)
 
+// 실패/중단된 다운로드의 임시파일(.part 등)은 pendingFiles에 등록되지 않아
+// 위 청소 로직이 못 지운다 → 작업 실패 시 토큰 프리픽스로 직접 정리
+function cleanupTempFiles(prefix) {
+  try {
+    for (const f of fs.readdirSync(os.tmpdir())) {
+      if (f.startsWith(prefix)) fs.unlink(path.join(os.tmpdir(), f), () => {})
+    }
+  } catch {}
+}
+
 // Serve a downloaded file to the browser
 app.get('/file/:token', (req, res) => {
   const info = pendingFiles.get(req.params.token)
@@ -249,6 +259,7 @@ app.post('/api/start-vod', async (req, res) => {
       } else {
         job.status = 'error'
         job.error = `yt-dlp 종료 코드: ${code}`
+        cleanupTempFiles(`chzzk_${token}`)
       }
     })
   })()
@@ -356,6 +367,7 @@ app.post('/download', async (req, res) => {
             send('done', 'ERROR')
           }
         } else {
+          cleanupTempFiles(`soop_${token}`)
           send('done', 'ERROR')
         }
         res.end()
@@ -452,6 +464,7 @@ app.post('/download', async (req, res) => {
             send('done', 'ERROR')
           }
         } else {
+          cleanupTempFiles(`chzzk_${token}`)
           send('done', 'ERROR')
         }
         res.end()
@@ -633,6 +646,7 @@ app.post('/api/start-live', async (req, res) => {
       } else {
         job.status = 'error'
         job.error = `종료 코드: ${code}`
+        cleanupTempFiles(`chzzk_live_${token}`)
       }
       liveJobs.delete(token)
     })
@@ -687,6 +701,18 @@ app.post('/api/check-cookie', async (req, res) => {
 })
 
 export async function startServer({ port = 5555, userDataPath = os.tmpdir() } = {}) {
+  // 작업 정보는 메모리에만 있어서, 이전 실행이 남긴 임시파일은 전부 고아다.
+  // 2시간 넘은 것만 지워 동시에 떠 있는 다른 인스턴스의 진행 중 파일은 보호한다.
+  try {
+    const cutoff = Date.now() - 7200000
+    for (const f of fs.readdirSync(os.tmpdir())) {
+      if (/^(chzzk_|soop_)/.test(f)) {
+        const p = path.join(os.tmpdir(), f)
+        try { if (fs.statSync(p).mtimeMs < cutoff) fs.unlinkSync(p) } catch {}
+      }
+    }
+  } catch {}
+
   try {
     if (!fs.existsSync(userDataPath)) fs.mkdirSync(userDataPath, { recursive: true })
     ytDlpPath = await ensureYtDlp(userDataPath)
