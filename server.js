@@ -76,6 +76,29 @@ function findSalvageFile(prefix) {
 const DISK_FULL_RE = /No space left on device|\[Errno 28\]/i
 const DISK_FULL_MSG = '💾 디스크 공간이 부족합니다. 디스크를 정리한 뒤 다시 시도해주세요.'
 
+// 완성된 파일을 브라우저로 다시 내려받게 하면(HTTP 재복사) 큰 파일에서 자주 끊긴다.
+// 앱과 서버가 같은 PC에 있으므로 완성 파일을 사용자 다운로드 폴더로 바로 옮긴다.
+let downloadsDir = path.join(os.homedir(), 'Downloads')
+
+function saveToDownloads(src, filename) {
+  try { if (!fs.existsSync(downloadsDir)) fs.mkdirSync(downloadsDir, { recursive: true }) } catch {}
+  const ext = path.extname(filename)
+  const base = path.basename(filename, ext)
+  let dest = path.join(downloadsDir, filename)
+  for (let i = 1; fs.existsSync(dest); i++) dest = path.join(downloadsDir, `${base} (${i})${ext}`)
+  try {
+    fs.renameSync(src, dest)
+  } catch {
+    // 임시폴더와 다운로드 폴더가 다른 볼륨이면 rename 실패(EXDEV) → 복사 후 삭제
+    fs.copyFileSync(src, dest)
+    try { fs.unlinkSync(src) } catch {}
+  }
+  return dest
+}
+
+// 변환/합치기 단계 감지 — 큰 파일에서 몇 분간 멈춘 것처럼 보이므로 상태로 알린다
+const CONVERT_RE = /\[FixupM3u8\]|\[Merger\]|Merging formats|Fixing MPEG-TS/
+
 // Serve a downloaded file to the browser
 app.get('/file/:token', (req, res) => {
   const info = pendingFiles.get(req.params.token)
@@ -243,6 +266,7 @@ app.post('/api/start-vod', async (req, res) => {
     const proc = spawn(ytDlpPath, args)
     let actualPath = null
     let diskFull = false
+    const nameBase = isSoopUrl(url) ? 'soop_download' : 'download'
 
     proc.stdout.on('data', data => {
       const text = data.toString()
@@ -253,6 +277,10 @@ app.post('/api/start-vod', async (req, res) => {
       const pctM = text.match(/(\d+\.?\d*)%/)
       if (pctM) job.progress = parseFloat(pctM[1])
       if (DISK_FULL_RE.test(text)) diskFull = true
+      if (CONVERT_RE.test(text) && !job.converting) {
+        job.converting = true
+        job.log.push('🔧 변환(마무리) 중... 큰 파일은 몇 분 걸릴 수 있어요')
+      }
       text.split('\n').forEach(l => { if (l.trim()) job.log.push(l.trim()) })
     })
     proc.stderr.on('data', data => {
@@ -269,9 +297,11 @@ app.post('/api/start-vod', async (req, res) => {
         }
         if (actualPath && fs.existsSync(actualPath)) {
           const ext = path.extname(actualPath).slice(1) || 'mp4'
-          job.path = actualPath
-          job.filename = `download.${ext}`
-          pendingFiles.set(token, { path: actualPath, filename: job.filename, createdAt: Date.now() })
+          const saved = saveToDownloads(actualPath, `${nameBase}.${ext}`)
+          job.path = saved
+          job.filename = path.basename(saved)
+          job.savedPath = saved
+          job.log.push(`✅ 저장됨: ${saved}`)
           job.progress = 100
           job.status = 'done'
         } else {
@@ -282,12 +312,13 @@ app.post('/api/start-vod', async (req, res) => {
         const salvage = findSalvageFile(`chzzk_${token}`)
         if (salvage) {
           const ext = path.extname(salvage).slice(1) || 'mp4'
-          job.path = salvage
-          job.filename = `download.${ext}`
-          pendingFiles.set(token, { path: salvage, filename: job.filename, createdAt: Date.now() })
+          const saved = saveToDownloads(salvage, `${nameBase}.${ext}`)
+          job.path = saved
+          job.filename = path.basename(saved)
+          job.savedPath = saved
           job.log.push(diskFull
-            ? '⚠️ 디스크 공간 부족으로 변환 실패 — 변환 전 원본 파일을 제공합니다. 디스크를 정리해주세요.'
-            : '⚠️ 후처리 실패 — 변환 전 원본 파일을 제공합니다')
+            ? `⚠️ 디스크 공간 부족으로 변환 실패 — 변환 전 원본을 저장했습니다: ${saved}`
+            : `⚠️ 후처리 실패 — 변환 전 원본을 저장했습니다: ${saved}`)
           job.progress = 100
           job.status = 'done'
         } else {
@@ -309,6 +340,9 @@ app.get('/api/vod-status/:token', (req, res) => {
     progress: job.progress,
     log: job.log.slice(-5),
     fileToken: job.status === 'done' ? req.params.token : null,
+    savedPath: job.savedPath || null,
+    savedName: job.savedPath ? path.basename(job.savedPath) : null,
+    converting: !!job.converting,
     error: job.error
   })
 })
@@ -324,6 +358,9 @@ app.get('/api/active-jobs', (req, res) => {
         status: job.status,
         progress: job.progress,
         error: job.error,
+        converting: !!job.converting,
+        savedPath: job.savedPath || null,
+        savedName: job.savedPath ? path.basename(job.savedPath) : null,
         log: job.log.slice(-1)[0] || '',
         startedAt: job.startedAt
       })
@@ -343,7 +380,26 @@ app.post('/download', async (req, res) => {
   res.setHeader('Cache-Control', 'no-cache')
   res.setHeader('Connection', 'keep-alive')
 
-  const send = (type, data) => res.write(`data: ${JSON.stringify({ type, data })}\n\n`)
+  // 이 다운로드도 '진행 중인 작업' 목록에 뜨도록 등록한다 (URL 탭 경로는 그동안 누락돼 있었음)
+  const listToken = crypto.randomBytes(8).toString('hex')
+  const listJob = { url, status: 'running', log: [], progress: 0, error: null, savedPath: null, converting: false, startedAt: Date.now() }
+  vodJobs.set(listToken, listJob)
+
+  const send = (type, data) => {
+    if (type === 'progress') listJob.progress = data
+    else if (type === 'status') listJob.status = data
+    else if (type === 'saved') { listJob.status = 'done'; listJob.progress = 100; listJob.savedPath = data?.path || null }
+    else if (type === 'done') { if (data === 'ERROR') listJob.status = 'error' }
+    else if (type === 'log' || type === 'err') {
+      listJob.log.push(String(data))
+      if (CONVERT_RE.test(String(data)) && !listJob.converting) {
+        listJob.converting = true
+        listJob.log.push('🔧 변환(마무리) 중... 큰 파일은 몇 분 걸릴 수 있어요')
+      }
+    }
+    // 사용자가 페이지를 닫아 SSE가 끊겨도 다운로드는 계속돼 파일이 저장된다.
+    if (!res.writableEnded) { try { res.write(`data: ${JSON.stringify({ type, data })}\n\n`) } catch {} }
+  }
 
   try {
     const clipMatch = url.match(/chzzk\.naver\.com\/clips\/([A-Za-z0-9_-]+)/)
@@ -396,9 +452,10 @@ app.post('/download', async (req, res) => {
           }
           if (actualPath && fs.existsSync(actualPath)) {
             const ext = path.extname(actualPath).slice(1) || 'mp4'
-            pendingFiles.set(token, { path: actualPath, filename: `soop_download.${ext}`, createdAt: Date.now() })
+            const saved = saveToDownloads(actualPath, `soop_download.${ext}`)
             send('progress', 100)
-            send('file_ready', token)
+            send('log', `✅ 저장됨: ${saved}`)
+            send('saved', { path: saved, name: path.basename(saved) })
             send('done', 'OK')
           } else {
             send('err', '❌ 다운로드 파일을 찾지 못했습니다.')
@@ -408,12 +465,12 @@ app.post('/download', async (req, res) => {
           const salvage = findSalvageFile(`soop_${token}`)
           if (salvage) {
             const ext = path.extname(salvage).slice(1) || 'mp4'
-            pendingFiles.set(token, { path: salvage, filename: `soop_download.${ext}`, createdAt: Date.now() })
+            const saved = saveToDownloads(salvage, `soop_download.${ext}`)
             send('log', diskFull
-              ? '⚠️ 디스크 공간 부족으로 변환 실패 — 변환 전 원본 파일을 제공합니다. 디스크를 정리해주세요.'
-              : '⚠️ 후처리 실패 — 변환 전 원본 파일을 제공합니다')
+              ? `⚠️ 디스크 공간 부족으로 변환 실패 — 변환 전 원본을 저장했습니다: ${saved}`
+              : `⚠️ 후처리 실패 — 변환 전 원본을 저장했습니다: ${saved}`)
             send('progress', 100)
-            send('file_ready', token)
+            send('saved', { path: saved, name: path.basename(saved) })
             send('done', 'OK')
           } else {
             if (diskFull) send('err', DISK_FULL_MSG)
@@ -453,9 +510,10 @@ app.post('/download', async (req, res) => {
         }
       })
 
-      pendingFiles.set(token, { path: tmpPath, filename: `${safeTitle}.mp4`, createdAt: Date.now() })
+      const savedClip = saveToDownloads(tmpPath, `${safeTitle}.mp4`)
       send('progress', 100)
-      send('file_ready', token)
+      send('log', `✅ 저장됨: ${savedClip}`)
+      send('saved', { path: savedClip, name: path.basename(savedClip) })
       send('done', 'OK')
       res.end()
 
@@ -509,9 +567,10 @@ app.post('/download', async (req, res) => {
           }
           if (actualPath && fs.existsSync(actualPath)) {
             const ext = path.extname(actualPath).slice(1) || 'mp4'
-            pendingFiles.set(token, { path: actualPath, filename: `download.${ext}`, createdAt: Date.now() })
+            const saved = saveToDownloads(actualPath, `download.${ext}`)
             send('progress', 100)
-            send('file_ready', token)
+            send('log', `✅ 저장됨: ${saved}`)
+            send('saved', { path: saved, name: path.basename(saved) })
             send('done', 'OK')
           } else {
             send('err', '❌ 다운로드 파일을 찾지 못했습니다.')
@@ -521,12 +580,12 @@ app.post('/download', async (req, res) => {
           const salvage = findSalvageFile(`chzzk_${token}`)
           if (salvage) {
             const ext = path.extname(salvage).slice(1) || 'mp4'
-            pendingFiles.set(token, { path: salvage, filename: `download.${ext}`, createdAt: Date.now() })
+            const saved = saveToDownloads(salvage, `download.${ext}`)
             send('log', diskFull
-              ? '⚠️ 디스크 공간 부족으로 변환 실패 — 변환 전 원본 파일을 제공합니다. 디스크를 정리해주세요.'
-              : '⚠️ 후처리 실패 — 변환 전 원본 파일을 제공합니다')
+              ? `⚠️ 디스크 공간 부족으로 변환 실패 — 변환 전 원본을 저장했습니다: ${saved}`
+              : `⚠️ 후처리 실패 — 변환 전 원본을 저장했습니다: ${saved}`)
             send('progress', 100)
-            send('file_ready', token)
+            send('saved', { path: saved, name: path.basename(saved) })
             send('done', 'OK')
           } else {
             if (diskFull) send('err', DISK_FULL_MSG)
@@ -704,9 +763,11 @@ app.post('/api/start-live', async (req, res) => {
         }
         if (actualPath && fs.existsSync(actualPath)) {
           const ext = path.extname(actualPath).slice(1) || 'mp4'
-          job.path = actualPath
-          job.filename = `live_${channelId}.${ext}`
-          pendingFiles.set(token, { path: actualPath, filename: job.filename, createdAt: Date.now() })
+          const saved = saveToDownloads(actualPath, `live_${channelId}.${ext}`)
+          job.path = saved
+          job.filename = path.basename(saved)
+          job.savedPath = saved
+          job.log.push(`✅ 저장됨: ${saved}`)
           job.progress = 100
           job.status = 'done'
         } else {
@@ -770,7 +831,8 @@ app.post('/api/check-cookie', async (req, res) => {
   }
 })
 
-export async function startServer({ port = 5555, userDataPath = os.tmpdir() } = {}) {
+export async function startServer({ port = 5555, userDataPath = os.tmpdir(), downloadsPath } = {}) {
+  if (downloadsPath) downloadsDir = downloadsPath
   // 작업 정보는 메모리에만 있어서, 이전 실행이 남긴 임시파일은 전부 고아다.
   // 2시간 넘은 것만 지워 동시에 떠 있는 다른 인스턴스의 진행 중 파일은 보호한다.
   try {

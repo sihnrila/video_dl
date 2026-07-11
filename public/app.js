@@ -217,13 +217,13 @@ function App() {
                 onLog: msg => addLog('stdout', msg),
                 onErr: msg => addLog('stderr', msg),
                 onProgress: p => setProgress(p),
-                onFileReady: token => {
-                    setStatus('파일 준비 완료! 저장 중...');
+                onFileReady: token => triggerDownload(`/file/${token}`),
+                onSaved: info => {
                     setProgress(100);
-                    triggerDownload(`/file/${token}`);
+                    setStatus(`✅ 저장됨: ${info?.name || '다운로드 폴더'}`);
                 },
                 onDone: ok => {
-                    setStatus(ok ? '✅ 완료!' : '❌ 오류 발생');
+                    setStatus(prev => ok ? (prev.startsWith('✅') ? prev : '✅ 완료!') : '❌ 오류 발생');
                     setDownloading(false);
                 }
             });
@@ -565,7 +565,7 @@ function App() {
                                     <div className="job-meta">
                                         <span className="job-url" title={job.url}>{job.url}</span>
                                         <span className={`job-status-badge ${job.status}`}>
-                                            {job.status === 'running' ? '⏳ 다운로드 중' : job.status === 'done' ? '✅ 완료' : '❌ 오류'}
+                                            {job.status === 'done' ? '✅ 완료' : job.status === 'error' ? '❌ 오류' : job.converting ? '🔧 변환 중' : '⏳ 다운로드 중'}
                                         </span>
                                     </div>
                                     <div className="job-progress-row">
@@ -575,7 +575,10 @@ function App() {
                                         <span className="job-progress-pct">{job.progress.toFixed(0)}%</span>
                                     </div>
                                     {job.log && <div className="job-log">{job.log}</div>}
-                                    {job.status === 'done' && (
+                                    {job.status === 'done' && job.savedName && (
+                                        <div className="job-saved">📁 다운로드 폴더에 저장됨: {job.savedName}</div>
+                                    )}
+                                    {job.status === 'done' && !job.savedName && (
                                         <button className="job-save-btn" onClick={() => triggerDownload(`/file/${job.token}`)}>
                                             ⬇️ 내 PC에 저장
                                         </button>
@@ -600,7 +603,7 @@ function triggerDownload(href) {
     a.click();
 }
 
-async function readSSE(response, { onLog, onErr, onProgress, onFileReady, onDone } = {}) {
+async function readSSE(response, { onLog, onErr, onProgress, onFileReady, onSaved, onDone } = {}) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -621,6 +624,7 @@ async function readSSE(response, { onLog, onErr, onProgress, onFileReady, onDone
                 else if (type === 'err') onErr?.(data);
                 else if (type === 'progress') onProgress?.(typeof data === 'number' ? data : 0);
                 else if (type === 'file_ready') onFileReady?.(data);
+                else if (type === 'saved') onSaved?.(data);
                 else if (type === 'done') onDone?.(data === 'OK');
             } catch {}
         }

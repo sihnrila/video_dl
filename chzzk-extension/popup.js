@@ -251,15 +251,20 @@ function startVodPoll(token) {
       return
     }
     const pct = Math.round(r.progress || 0)
-    $('btnDownloadVod').textContent = `⏳ ${pct}%`
+    $('btnDownloadVod').textContent = r.converting ? '🔧 변환 중...' : `⏳ ${pct}%`
     if (r.log?.length) showStatus(r.log[r.log.length - 1], 'info')
 
-    if (r.status === 'done' && r.fileToken) {
+    if (r.status === 'done') {
       clearInterval(vodPollTimer)
-      showStatus('✅ 다운로드 완료! 저장 중...', 'ok')
-      const a = document.createElement('a')
-      a.href = `http://localhost:5555/file/${r.fileToken}`
-      a.click()
+      if (r.savedName) {
+        showStatus(`✅ 저장 완료: 다운로드 폴더 / ${r.savedName}`, 'ok')
+      } else if (r.fileToken) {
+        // 구버전 앱 호환: 직접 저장을 지원 안 하면 브라우저 다운로드로 폴백
+        showStatus('✅ 다운로드 완료! 저장 중...', 'ok')
+        const a = document.createElement('a')
+        a.href = `http://localhost:5555/file/${r.fileToken}`
+        a.click()
+      }
       $('btnDownloadVod').disabled = false
       $('btnDownloadVod').textContent = '⬇ VOD 다운로드'
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })

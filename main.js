@@ -81,9 +81,10 @@ async function createWindow() {
     // Start backend server
     const port = process.env.PORT || 5555
     const userDataPath = app.getPath('userData')
-    
+    const downloadsPath = app.getPath('downloads')
+
     try {
-        await startServer({ port, userDataPath })
+        await startServer({ port, userDataPath, downloadsPath })
         mainWindow.loadURL(`http://localhost:${port}`)
     } catch (err) {
         console.error('Failed to start server:', err)
