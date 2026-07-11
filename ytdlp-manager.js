@@ -56,27 +56,27 @@ async function downloadYtDlp(binPath) {
 export async function ensureYtDlp(userDataPath) {
     const binPath = path.join(userDataPath, PLATFORM === 'win32' ? 'yt-dlp.exe' : 'yt-dlp')
 
+    // 바이너리가 이미 있으면 즉시 그 경로를 쓰고(=앱 창이 바로 뜸),
+    // 무결성 확인과 최신화(-U)는 백그라운드로 처리해 시작을 막지 않는다.
     if (fs.existsSync(binPath)) {
-        const version = await run(binPath, ['--version'], 30000)
-        if (version.ok) {
-            // 사이트(치지직/숲) 변경에 대응하려면 yt-dlp가 항상 최신이어야 한다.
-            // 셀프 업데이트 실패(네트워크 등)는 치명적이지 않으므로 기존 바이너리를 그대로 쓴다.
-            console.log(`yt-dlp ${version.stdout} found, checking for updates...`)
-            const update = await run(binPath, ['-U'])
-            if (update.ok) {
-                const lastLine = update.stdout.split('\n').pop()
-                console.log(`yt-dlp update: ${lastLine}`)
+        run(binPath, ['--version'], 30000).then(version => {
+            if (version.ok) {
+                console.log(`yt-dlp ${version.stdout} — updating in background...`)
+                run(binPath, ['-U']).then(update => {
+                    if (update.ok) console.log(`yt-dlp update: ${update.stdout.split('\n').pop()}`)
+                    else console.error('yt-dlp self-update failed (keeping current version):', update.stderr || update.err?.message)
+                })
             } else {
-                console.error('yt-dlp self-update failed (keeping current version):', update.stderr || update.err?.message)
+                // 실행조차 안 되는(손상된) 바이너리는 지우고 다시 받는다
+                console.error('Existing yt-dlp binary is broken, re-downloading...')
+                try { fs.unlinkSync(binPath) } catch {}
+                downloadYtDlp(binPath).catch(err => console.error('Failed to re-download yt-dlp:', err.message))
             }
-            return binPath
-        }
-
-        // 실행조차 안 되는 바이너리(다운로드 중단 등으로 손상)는 지우고 새로 받는다
-        console.error('Existing yt-dlp binary is broken, re-downloading...')
-        try { fs.unlinkSync(binPath) } catch {}
+        })
+        return binPath
     }
 
+    // 최초 실행 등 바이너리가 아예 없을 때만 다운로드를 기다린다
     try {
         return await downloadYtDlp(binPath)
     } catch (err) {

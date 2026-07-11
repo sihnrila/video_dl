@@ -67,6 +67,22 @@ function setupAutoUpdater() {
     autoUpdater.checkForUpdates()
 }
 
+const serverPort = process.env.PORT || 5555
+let serverPromise = null
+
+// 서버는 앱 수명 동안 딱 한 번만 시작한다. 창을 닫았다 다시 열어도(activate)
+// 서버를 다시 켜지 않아 포트 충돌(EADDRINUSE)로 인한 시작 오류가 없다.
+function ensureServer() {
+    if (!serverPromise) {
+        serverPromise = startServer({
+            port: serverPort,
+            userDataPath: app.getPath('userData'),
+            downloadsPath: app.getPath('downloads')
+        }).catch(err => { console.error('Failed to start server:', err) })
+    }
+    return serverPromise
+}
+
 async function createWindow() {
     mainWindow = new BrowserWindow({
         width: 1024,
@@ -78,28 +94,31 @@ async function createWindow() {
         }
     })
 
-    // Start backend server
-    const port = process.env.PORT || 5555
-    const userDataPath = app.getPath('userData')
-    const downloadsPath = app.getPath('downloads')
-
-    try {
-        await startServer({ port, userDataPath, downloadsPath })
-        mainWindow.loadURL(`http://localhost:${port}`)
-    } catch (err) {
-        console.error('Failed to start server:', err)
-    }
+    await ensureServer()
+    mainWindow.loadURL(`http://localhost:${serverPort}`)
 }
 
-app.whenReady().then(() => {
-    createWindow()
-
-    if (app.isPackaged) setupAutoUpdater()
-
-    app.on('activate', () => {
-        if (BrowserWindow.getAllWindows().length === 0) createWindow()
+// 두 번째 실행을 막아 서버가 중복으로 뜨지 않게 한다 (이미 열린 창을 앞으로)
+if (!app.requestSingleInstanceLock()) {
+    app.quit()
+} else {
+    app.on('second-instance', () => {
+        if (mainWindow) {
+            if (mainWindow.isMinimized()) mainWindow.restore()
+            mainWindow.focus()
+        }
     })
-})
+
+    app.whenReady().then(() => {
+        createWindow()
+
+        if (app.isPackaged) setupAutoUpdater()
+
+        app.on('activate', () => {
+            if (BrowserWindow.getAllWindows().length === 0) createWindow()
+        })
+    })
+}
 
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {

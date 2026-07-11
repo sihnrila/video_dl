@@ -878,9 +878,15 @@ export async function startServer({ port = 5555, userDataPath = os.tmpdir(), dow
     console.error('Failed to prepare yt-dlp:', err)
   }
   return new Promise(resolve => {
-    const server = app.listen(port, () => {
+    const server = app.listen(port)
+    server.once('listening', () => {
       console.log(`\n🚀 http://localhost:${port}\n`)
       resolve(server)
+    })
+    server.once('error', err => {
+      // 이미 이 포트에 서버가 떠 있으면(다른 창/이전 인스턴스) 크래시하지 말고 그걸 재사용
+      console.error(`listen(${port}) 실패: ${err.code || err.message} — 기존 서버 재사용`)
+      resolve(null)
     })
   })
 }
