@@ -62,6 +62,17 @@ function cleanupTempFiles(prefix) {
   } catch {}
 }
 
+// 다운로드는 끝났는데 후처리(컨테이너 변환 등)만 실패한 경우,
+// 완성된 원본(.part/.ytdl이 아닌 파일)을 찾아 살려서 제공한다.
+// 변환에는 원본 크기만큼의 여유 공간이 더 필요해 디스크 부족으로 곧잘 실패한다.
+function findSalvageFile(prefix) {
+  try {
+    const f = fs.readdirSync(os.tmpdir()).find(f =>
+      f.startsWith(prefix) && !f.endsWith('.part') && !f.endsWith('.ytdl'))
+    return f ? path.join(os.tmpdir(), f) : null
+  } catch { return null }
+}
+
 // Serve a downloaded file to the browser
 app.get('/file/:token', (req, res) => {
   const info = pendingFiles.get(req.params.token)
@@ -261,9 +272,20 @@ app.post('/api/start-vod', async (req, res) => {
           job.error = '다운로드 파일을 찾지 못했습니다.'
         }
       } else {
-        job.status = 'error'
-        job.error = `yt-dlp 종료 코드: ${code}`
-        cleanupTempFiles(`chzzk_${token}`)
+        const salvage = findSalvageFile(`chzzk_${token}`)
+        if (salvage) {
+          const ext = path.extname(salvage).slice(1) || 'mp4'
+          job.path = salvage
+          job.filename = `download.${ext}`
+          pendingFiles.set(token, { path: salvage, filename: job.filename, createdAt: Date.now() })
+          job.log.push('⚠️ 후처리 실패 — 변환 전 원본 파일을 제공합니다')
+          job.progress = 100
+          job.status = 'done'
+        } else {
+          job.status = 'error'
+          job.error = `yt-dlp 종료 코드: ${code}`
+          cleanupTempFiles(`chzzk_${token}`)
+        }
       }
     })
   })()
@@ -371,8 +393,18 @@ app.post('/download', async (req, res) => {
             send('done', 'ERROR')
           }
         } else {
-          cleanupTempFiles(`soop_${token}`)
-          send('done', 'ERROR')
+          const salvage = findSalvageFile(`soop_${token}`)
+          if (salvage) {
+            const ext = path.extname(salvage).slice(1) || 'mp4'
+            pendingFiles.set(token, { path: salvage, filename: `soop_download.${ext}`, createdAt: Date.now() })
+            send('log', '⚠️ 후처리 실패 — 변환 전 원본 파일을 제공합니다')
+            send('progress', 100)
+            send('file_ready', token)
+            send('done', 'OK')
+          } else {
+            cleanupTempFiles(`soop_${token}`)
+            send('done', 'ERROR')
+          }
         }
         res.end()
       })
@@ -468,8 +500,18 @@ app.post('/download', async (req, res) => {
             send('done', 'ERROR')
           }
         } else {
-          cleanupTempFiles(`chzzk_${token}`)
-          send('done', 'ERROR')
+          const salvage = findSalvageFile(`chzzk_${token}`)
+          if (salvage) {
+            const ext = path.extname(salvage).slice(1) || 'mp4'
+            pendingFiles.set(token, { path: salvage, filename: `download.${ext}`, createdAt: Date.now() })
+            send('log', '⚠️ 후처리 실패 — 변환 전 원본 파일을 제공합니다')
+            send('progress', 100)
+            send('file_ready', token)
+            send('done', 'OK')
+          } else {
+            cleanupTempFiles(`chzzk_${token}`)
+            send('done', 'ERROR')
+          }
         }
         res.end()
       })
