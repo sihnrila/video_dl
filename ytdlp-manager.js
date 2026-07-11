@@ -57,21 +57,14 @@ export async function ensureYtDlp(userDataPath) {
     const binPath = path.join(userDataPath, PLATFORM === 'win32' ? 'yt-dlp.exe' : 'yt-dlp')
 
     // 바이너리가 이미 있으면 즉시 그 경로를 쓰고(=앱 창이 바로 뜸),
-    // 무결성 확인과 최신화(-U)는 백그라운드로 처리해 시작을 막지 않는다.
+    // 최신화(-U)만 백그라운드로 처리해 시작을 막지 않는다.
+    // 주의: 여기서 바이너리를 지우고 다시 받으면 안 된다 —
+    //       진행 중인 다운로드/녹화가 쓰는 바이너리를 없애 실패시킬 수 있다.
+    //       (손상 바이너리는 다운로드 시 .download 임시파일→원자적 rename으로 이미 예방됨)
     if (fs.existsSync(binPath)) {
-        run(binPath, ['--version'], 30000).then(version => {
-            if (version.ok) {
-                console.log(`yt-dlp ${version.stdout} — updating in background...`)
-                run(binPath, ['-U']).then(update => {
-                    if (update.ok) console.log(`yt-dlp update: ${update.stdout.split('\n').pop()}`)
-                    else console.error('yt-dlp self-update failed (keeping current version):', update.stderr || update.err?.message)
-                })
-            } else {
-                // 실행조차 안 되는(손상된) 바이너리는 지우고 다시 받는다
-                console.error('Existing yt-dlp binary is broken, re-downloading...')
-                try { fs.unlinkSync(binPath) } catch {}
-                downloadYtDlp(binPath).catch(err => console.error('Failed to re-download yt-dlp:', err.message))
-            }
+        run(binPath, ['-U']).then(update => {
+            if (update.ok) console.log(`yt-dlp update: ${update.stdout.split('\n').pop()}`)
+            else console.error('yt-dlp self-update failed (keeping current version):', update.stderr || update.err?.message)
         })
         return binPath
     }
