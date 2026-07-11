@@ -589,7 +589,8 @@ app.post('/api/start-live', async (req, res) => {
     args.push(url)
 
     args.push('--ffmpeg-location', ffmpegPath)
-    const proc = spawn(ytDlpPath, args)
+    // 별도 프로세스 그룹으로 띄워야 중지 시 자식 ffmpeg까지 함께 종료할 수 있다
+    const proc = spawn(ytDlpPath, args, { detached: process.platform !== 'win32' })
     job.proc = proc
     let actualPath = null
 
@@ -609,6 +610,14 @@ app.post('/api/start-live', async (req, res) => {
         if (!actualPath) {
           const found = fs.readdirSync(os.tmpdir()).find(f => f.startsWith(`chzzk_live_${token}`))
           if (found) actualPath = path.join(os.tmpdir(), found)
+        }
+        // 중간에 중지된 녹화는 .part 파일로 남으므로 최종 파일명으로 바꿔서 제공
+        if (actualPath && !fs.existsSync(actualPath) && fs.existsSync(`${actualPath}.part`)) {
+          actualPath = `${actualPath}.part`
+        }
+        if (actualPath && actualPath.endsWith('.part')) {
+          const finalPath = actualPath.slice(0, -5)
+          try { fs.renameSync(actualPath, finalPath); actualPath = finalPath } catch {}
         }
         if (actualPath && fs.existsSync(actualPath)) {
           const ext = path.extname(actualPath).slice(1) || 'mp4'
@@ -634,7 +643,13 @@ app.post('/api/stop-live/:token', (req, res) => {
   const job = liveJobs.get(req.params.token)
   if (!job) return res.status(404).json({ error: '녹화 작업을 찾을 수 없습니다.' })
   if (job.proc) {
-    job.proc.kill('SIGTERM')
+    // yt-dlp만 죽이면 자식 ffmpeg가 고아로 남아 녹화가 계속된다 →
+    // 프로세스 그룹 전체에 SIGINT를 보내 ffmpeg가 파일을 마무리하고 종료되게 한다
+    if (process.platform === 'win32') {
+      spawn('taskkill', ['/pid', String(job.proc.pid), '/T', '/F'])
+    } else {
+      try { process.kill(-job.proc.pid, 'SIGINT') } catch { job.proc.kill('SIGINT') }
+    }
   }
   res.json({ ok: true })
 })
