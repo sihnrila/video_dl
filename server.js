@@ -99,6 +99,14 @@ function saveToDownloads(src, filename) {
 // 변환/합치기 단계 감지 — 큰 파일에서 몇 분간 멈춘 것처럼 보이므로 상태로 알린다
 const CONVERT_RE = /\[FixupM3u8\]|\[Merger\]|Merging formats|Fixing MPEG-TS/
 
+// ffprobe 없이 동작할 때 뜨는 경고 — 정상이므로 오류로 보이지 않게 한글 안내로 바꾼다
+const FFPROBE_WARN_RE = /ffprobe|Unable to extract metadata/i
+// 로그 한 줄을 부드럽게: ffprobe 경고면 정상 안내로 치환(오류 아님), 아니면 null
+function softenLine(line) {
+  if (FFPROBE_WARN_RE.test(line)) return 'ℹ️ 마무리 처리 중입니다… (정상 동작이며 오류가 아닙니다)'
+  return null
+}
+
 // Serve a downloaded file to the browser
 app.get('/file/:token', (req, res) => {
   const info = pendingFiles.get(req.params.token)
@@ -281,12 +289,16 @@ app.post('/api/start-vod', async (req, res) => {
         job.converting = true
         job.log.push('🔧 변환(마무리) 중... 큰 파일은 몇 분 걸릴 수 있어요')
       }
-      text.split('\n').forEach(l => { if (l.trim()) job.log.push(l.trim()) })
+      text.split('\n').forEach(l => { if (l.trim()) job.log.push(softenLine(l) || l.trim()) })
     })
     proc.stderr.on('data', data => {
       const text = data.toString()
       if (DISK_FULL_RE.test(text)) diskFull = true
-      text.split('\n').forEach(l => { if (l.trim()) job.log.push(`[err] ${l.trim()}`) })
+      text.split('\n').forEach(l => {
+        if (!l.trim()) return
+        const soft = softenLine(l)
+        job.log.push(soft || `[err] ${l.trim()}`)
+      })
     })
 
     proc.on('close', code => {
@@ -437,12 +449,17 @@ app.post('/download', async (req, res) => {
         if (merge) actualPath = merge[1].trim()
         const pctM = text.match(/(\d+\.?\d*)%/)
         if (pctM) send('progress', parseFloat(pctM[1]))
-        text.split('\n').forEach(l => { if (l.trim()) send('log', l.trim()) })
+        text.split('\n').forEach(l => { if (l.trim()) send('log', softenLine(l) || l.trim()) })
       })
       proc.stderr.on('data', data => {
         const text = data.toString()
         if (DISK_FULL_RE.test(text)) diskFull = true
-        text.split('\n').forEach(l => { if (l.trim()) send('err', l.trim()) })
+        text.split('\n').forEach(l => {
+          if (!l.trim()) return
+          const soft = softenLine(l)
+          if (soft) send('log', soft)
+          else send('err', l.trim())
+        })
       })
       proc.on('close', code => {
         if (code === 0) {
@@ -551,12 +568,17 @@ app.post('/download', async (req, res) => {
         if (merge) actualPath = merge[1].trim()
         const pctM = text.match(/(\d+\.?\d*)%/)
         if (pctM) send('progress', parseFloat(pctM[1]))
-        text.split('\n').forEach(l => { if (l.trim()) send('log', l.trim()) })
+        text.split('\n').forEach(l => { if (l.trim()) send('log', softenLine(l) || l.trim()) })
       })
       proc.stderr.on('data', data => {
         const text = data.toString()
         if (DISK_FULL_RE.test(text)) diskFull = true
-        text.split('\n').forEach(l => { if (l.trim()) send('err', l.trim()) })
+        text.split('\n').forEach(l => {
+          if (!l.trim()) return
+          const soft = softenLine(l)
+          if (soft) send('log', soft)
+          else send('err', l.trim())
+        })
       })
 
       proc.on('close', code => {
@@ -740,12 +762,16 @@ app.post('/api/start-live', async (req, res) => {
       if (dest) actualPath = dest[1].trim()
       const merge = text.match(/Merging formats into "(.+)"/)
       if (merge) actualPath = merge[1].trim()
-      text.split('\n').forEach(l => { if (l.trim()) job.log.push(l.trim()) })
+      text.split('\n').forEach(l => { if (l.trim()) job.log.push(softenLine(l) || l.trim()) })
     })
     proc.stderr.on('data', data => {
       const text = data.toString()
       if (DISK_FULL_RE.test(text)) diskFull = true
-      text.split('\n').forEach(l => { if (l.trim()) job.log.push(`[err] ${l.trim()}`) })
+      text.split('\n').forEach(l => {
+        if (!l.trim()) return
+        const soft = softenLine(l)
+        job.log.push(soft || `[err] ${l.trim()}`)
+      })
     })
     proc.on('close', code => {
       if (code === 0 || code === null) {
