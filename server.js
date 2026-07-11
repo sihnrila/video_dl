@@ -10,7 +10,9 @@ import ffmpegStatic from 'ffmpeg-static'
 import { ensureYtDlp } from './ytdlp-manager.js'
 
 let ytDlpPath = 'yt-dlp'
-let ffmpegPath = ffmpegStatic
+// 패키징된 앱에서 ffmpeg 바이너리는 asar 밖(app.asar.unpacked)에 풀리는데,
+// ffmpeg-static이 주는 경로는 asar 안을 가리켜 외부 프로세스(yt-dlp)가 실행할 수 없다
+let ffmpegPath = ffmpegStatic ? ffmpegStatic.replace('app.asar', 'app.asar.unpacked') : ffmpegStatic
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
