@@ -176,6 +176,7 @@ async function renderSoopPage(pageUrl) {
     : '⚠️ 서버 꺼짐 — yt-dlp 명령어를 터미널에서 실행하세요'
   $('vodServerStatus').className = running ? 'vod-server-status ok' : 'vod-server-status warn'
   $('btnDownloadVod').style.display = running ? 'block' : 'none'
+  $('vodQualityRow').style.display = running ? 'flex' : 'none'
 
   // Resume active download if exists
   const active = await bg({ action: 'getActiveDownload', url: pageUrl })
@@ -224,6 +225,7 @@ async function renderVodPage(videoNo, pageUrl) {
     : '⚠️ 서버 꺼짐 — yt-dlp 명령어를 터미널에서 실행하세요'
   $('vodServerStatus').className = running ? 'vod-server-status ok' : 'vod-server-status warn'
   $('btnDownloadVod').style.display = running ? 'block' : 'none'
+  $('vodQualityRow').style.display = running ? 'flex' : 'none'
 
   // Resume active download if exists
   const active = await bg({ action: 'getActiveDownload', url: pageUrl })
@@ -379,7 +381,7 @@ $('btnDownloadVod').addEventListener('click', async () => {
     await saveSoopCreds(soopUsername, soopPassword)
   }
 
-  const r = await bg({ action: 'startVodDownload', url, soopUsername, soopPassword })
+  const r = await bg({ action: 'startVodDownload', url, soopUsername, soopPassword, quality: $('vodQuality').value })
   if (r?.error) {
     showStatus(`❌ ${r.error}`, 'err')
     $('btnDownloadVod').disabled = false

@@ -410,6 +410,15 @@
           <p style="font-size:10px; color:#475569; margin-bottom:8px;">💾 자동 저장되어 다음에도 자동 로그인됩니다. 공개 영상은 비워둬도 됩니다.</p>
         </div>
         <div id="vodServerStatus" class="vod-server-status" style="font-size:11px; margin-bottom:8px;"></div>
+        <div class="row" id="vodQualityRow" style="display:none;">
+          <label class="field-label">화질</label>
+          <select id="vodQuality">
+            <option value="best">Best (최고화질)</option>
+            <option value="1080">1080p</option>
+            <option value="720">720p (용량 절반)</option>
+            <option value="540">540p</option>
+          </select>
+        </div>
         <button class="btn btn-primary" id="btnDownloadVod" style="display:none; margin-bottom:10px;">⬇ VOD 다운로드</button>
         <p style="font-size:11px; color:#64748b; margin-bottom:8px;">또는 터미널에서 직접 실행:</p>
         <div class="cmd-box" id="vodCommand"></div>

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "CHZZK Downloader",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "치지직 VOD·클립 다운로더 + 채널 구독자 클립 목록",
   "permissions": ["activeTab", "cookies", "downloads", "storage"],
   "host_permissions": [

@@ -192,7 +192,7 @@ function isSoopUrl(url) {
 }
 
 app.post('/api/start-vod', async (req, res) => {
-  const { url, nidAut = '', nidSes = '', soopUsername = '', soopPassword = '' } = req.body
+  const { url, quality = 'best', nidAut = '', nidSes = '', soopUsername = '', soopPassword = '' } = req.body
   const isSoop = isSoopUrl(url)
   if (!url?.match(/chzzk\.naver\.com\/video\/\w+/) && !isSoop)
     return res.status(400).json({ error: '치지직 또는 숲 VOD URL만 가능합니다.' })
@@ -216,7 +216,11 @@ app.post('/api/start-vod', async (req, res) => {
       if (aut && ses) args.push('--add-header', `Cookie:NID_AUT=${aut}; NID_SES=${ses}`)
       args.push('--add-header', 'Referer:https://chzzk.naver.com/')
     }
-    args.push('-f', 'bv+ba/b', '--merge-output-format', 'mp4')
+    const maxH = parseInt(quality, 10)
+    const fmt = !maxH
+      ? 'bv+ba/b'
+      : `bestvideo[height<=${maxH}]+bestaudio/best[height<=${maxH}]`
+    args.push('-f', fmt, '--merge-output-format', 'mp4')
     args.push('-o', tmpTemplate)
     args.push('--no-check-certificates', '--newline')
     args.push(url)
