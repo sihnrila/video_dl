@@ -73,6 +73,9 @@ function findSalvageFile(prefix) {
   } catch { return null }
 }
 
+const DISK_FULL_RE = /No space left on device|\[Errno 28\]/i
+const DISK_FULL_MSG = '💾 디스크 공간이 부족합니다. 디스크를 정리한 뒤 다시 시도해주세요.'
+
 // Serve a downloaded file to the browser
 app.get('/file/:token', (req, res) => {
   const info = pendingFiles.get(req.params.token)
@@ -239,6 +242,7 @@ app.post('/api/start-vod', async (req, res) => {
     args.push('--ffmpeg-location', ffmpegPath)
     const proc = spawn(ytDlpPath, args)
     let actualPath = null
+    let diskFull = false
 
     proc.stdout.on('data', data => {
       const text = data.toString()
@@ -248,10 +252,13 @@ app.post('/api/start-vod', async (req, res) => {
       if (merge) actualPath = merge[1].trim()
       const pctM = text.match(/(\d+\.?\d*)%/)
       if (pctM) job.progress = parseFloat(pctM[1])
+      if (DISK_FULL_RE.test(text)) diskFull = true
       text.split('\n').forEach(l => { if (l.trim()) job.log.push(l.trim()) })
     })
     proc.stderr.on('data', data => {
-      data.toString().split('\n').forEach(l => { if (l.trim()) job.log.push(`[err] ${l.trim()}`) })
+      const text = data.toString()
+      if (DISK_FULL_RE.test(text)) diskFull = true
+      text.split('\n').forEach(l => { if (l.trim()) job.log.push(`[err] ${l.trim()}`) })
     })
 
     proc.on('close', code => {
@@ -269,7 +276,7 @@ app.post('/api/start-vod', async (req, res) => {
           job.status = 'done'
         } else {
           job.status = 'error'
-          job.error = '다운로드 파일을 찾지 못했습니다.'
+          job.error = diskFull ? DISK_FULL_MSG : '다운로드 파일을 찾지 못했습니다.'
         }
       } else {
         const salvage = findSalvageFile(`chzzk_${token}`)
@@ -278,12 +285,14 @@ app.post('/api/start-vod', async (req, res) => {
           job.path = salvage
           job.filename = `download.${ext}`
           pendingFiles.set(token, { path: salvage, filename: job.filename, createdAt: Date.now() })
-          job.log.push('⚠️ 후처리 실패 — 변환 전 원본 파일을 제공합니다')
+          job.log.push(diskFull
+            ? '⚠️ 디스크 공간 부족으로 변환 실패 — 변환 전 원본 파일을 제공합니다. 디스크를 정리해주세요.'
+            : '⚠️ 후처리 실패 — 변환 전 원본 파일을 제공합니다')
           job.progress = 100
           job.status = 'done'
         } else {
           job.status = 'error'
-          job.error = `yt-dlp 종료 코드: ${code}`
+          job.error = diskFull ? DISK_FULL_MSG : `yt-dlp 종료 코드: ${code}`
           cleanupTempFiles(`chzzk_${token}`)
         }
       }
@@ -362,6 +371,7 @@ app.post('/download', async (req, res) => {
 
       const proc = spawn(ytDlpPath, args)
       let actualPath = null
+      let diskFull = false
 
       proc.stdout.on('data', data => {
         const text = data.toString()
@@ -374,7 +384,9 @@ app.post('/download', async (req, res) => {
         text.split('\n').forEach(l => { if (l.trim()) send('log', l.trim()) })
       })
       proc.stderr.on('data', data => {
-        data.toString().split('\n').forEach(l => { if (l.trim()) send('err', l.trim()) })
+        const text = data.toString()
+        if (DISK_FULL_RE.test(text)) diskFull = true
+        text.split('\n').forEach(l => { if (l.trim()) send('err', l.trim()) })
       })
       proc.on('close', code => {
         if (code === 0) {
@@ -397,11 +409,14 @@ app.post('/download', async (req, res) => {
           if (salvage) {
             const ext = path.extname(salvage).slice(1) || 'mp4'
             pendingFiles.set(token, { path: salvage, filename: `soop_download.${ext}`, createdAt: Date.now() })
-            send('log', '⚠️ 후처리 실패 — 변환 전 원본 파일을 제공합니다')
+            send('log', diskFull
+              ? '⚠️ 디스크 공간 부족으로 변환 실패 — 변환 전 원본 파일을 제공합니다. 디스크를 정리해주세요.'
+              : '⚠️ 후처리 실패 — 변환 전 원본 파일을 제공합니다')
             send('progress', 100)
             send('file_ready', token)
             send('done', 'OK')
           } else {
+            if (diskFull) send('err', DISK_FULL_MSG)
             cleanupTempFiles(`soop_${token}`)
             send('done', 'ERROR')
           }
@@ -468,6 +483,7 @@ app.post('/download', async (req, res) => {
       args.push('--ffmpeg-location', ffmpegPath)
       const proc = spawn(ytDlpPath, args)
       let actualPath = null
+      let diskFull = false
 
       proc.stdout.on('data', data => {
         const text = data.toString()
@@ -480,7 +496,9 @@ app.post('/download', async (req, res) => {
         text.split('\n').forEach(l => { if (l.trim()) send('log', l.trim()) })
       })
       proc.stderr.on('data', data => {
-        data.toString().split('\n').forEach(l => { if (l.trim()) send('err', l.trim()) })
+        const text = data.toString()
+        if (DISK_FULL_RE.test(text)) diskFull = true
+        text.split('\n').forEach(l => { if (l.trim()) send('err', l.trim()) })
       })
 
       proc.on('close', code => {
@@ -504,11 +522,14 @@ app.post('/download', async (req, res) => {
           if (salvage) {
             const ext = path.extname(salvage).slice(1) || 'mp4'
             pendingFiles.set(token, { path: salvage, filename: `download.${ext}`, createdAt: Date.now() })
-            send('log', '⚠️ 후처리 실패 — 변환 전 원본 파일을 제공합니다')
+            send('log', diskFull
+              ? '⚠️ 디스크 공간 부족으로 변환 실패 — 변환 전 원본 파일을 제공합니다. 디스크를 정리해주세요.'
+              : '⚠️ 후처리 실패 — 변환 전 원본 파일을 제공합니다')
             send('progress', 100)
             send('file_ready', token)
             send('done', 'OK')
           } else {
+            if (diskFull) send('err', DISK_FULL_MSG)
             cleanupTempFiles(`chzzk_${token}`)
             send('done', 'ERROR')
           }
@@ -652,6 +673,7 @@ app.post('/api/start-live', async (req, res) => {
     const proc = spawn(ytDlpPath, args, { detached: process.platform !== 'win32' })
     job.proc = proc
     let actualPath = null
+    let diskFull = false
 
     proc.stdout.on('data', data => {
       const text = data.toString()
@@ -662,7 +684,9 @@ app.post('/api/start-live', async (req, res) => {
       text.split('\n').forEach(l => { if (l.trim()) job.log.push(l.trim()) })
     })
     proc.stderr.on('data', data => {
-      data.toString().split('\n').forEach(l => { if (l.trim()) job.log.push(`[err] ${l.trim()}`) })
+      const text = data.toString()
+      if (DISK_FULL_RE.test(text)) diskFull = true
+      text.split('\n').forEach(l => { if (l.trim()) job.log.push(`[err] ${l.trim()}`) })
     })
     proc.on('close', code => {
       if (code === 0 || code === null) {
@@ -691,7 +715,7 @@ app.post('/api/start-live', async (req, res) => {
         }
       } else {
         job.status = 'error'
-        job.error = `종료 코드: ${code}`
+        job.error = diskFull ? DISK_FULL_MSG : `종료 코드: ${code}`
         cleanupTempFiles(`chzzk_live_${token}`)
       }
       liveJobs.delete(token)
