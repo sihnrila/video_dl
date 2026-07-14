@@ -1,4 +1,5 @@
 const { useState, useEffect, useRef } = React;
+const API_BASE = window.BACKEND_URL || '';
 
 const BOOKMARKLET_CODE = `javascript:(function(){var a=document.cookie.match(/NID_AUT=([^;]+)/),s=document.cookie.match(/NID_SES=([^;]+)/);if(!a||!s){alert('쿠키 자동 읽기 실패\\nNID_AUT와 NID_SES를 직접 복사해주세요.');return;}var u='${window.location.origin}/#ck='+encodeURIComponent(a[1]+'|'+s[1]);window.open(u,'_blank');})();`;
 
@@ -22,7 +23,7 @@ function App() {
     useEffect(() => {
         const pollJobs = async () => {
             try {
-                const res = await fetch('/api/active-jobs');
+                const res = await fetch(API_BASE + '/api/active-jobs');
                 if (res.ok) {
                     const data = await res.json();
                     setActiveJobs(data);
@@ -86,7 +87,7 @@ function App() {
         setCookieCheckState('checking');
         setCookieCheckMsg('');
         try {
-            const res = await fetch('/api/check-cookie', {
+            const res = await fetch(API_BASE + '/api/check-cookie', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ nidAut, nidSes })
@@ -127,7 +128,7 @@ function App() {
         if (!hasCookie) return;
         setPinLoading(true);
         try {
-            const res = await fetch('/api/pin/create', {
+            const res = await fetch(API_BASE + '/api/pin/create', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ nidAut, nidSes })
@@ -144,7 +145,7 @@ function App() {
         setPinLoadLoading(true);
         setPinLoadMsg('');
         try {
-            const res = await fetch('/api/pin/load', {
+            const res = await fetch(API_BASE + '/api/pin/load', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ pin: code })
@@ -202,7 +203,7 @@ function App() {
         setStatus('처리 중...');
 
         try {
-            const response = await fetch('/download', {
+            const response = await fetch(API_BASE + '/download', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url, quality, nidAut, nidSes, soopUsername, soopPassword })
@@ -248,7 +249,7 @@ function App() {
             if (!reset && nextCursor) params.set('cursor', nextCursor);
 
             const endpoint = isSoopChannel ? '/api/soop-vods' : '/api/channel-clips';
-            const res = await fetch(`${endpoint}?${params}`);
+            const res = await fetch(API_BASE + endpoint + '?' + params);
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || '목록을 불러오지 못했습니다.');
 
@@ -279,7 +280,7 @@ function App() {
             const body = isSoopVod
                 ? { url: clip._soopUrl, quality: 'best', soopUsername, soopPassword }
                 : { url: `https://chzzk.naver.com/clips/${clipId}`, quality: 'best', nidAut, nidSes };
-            const response = await fetch('/download', {
+            const response = await fetch(API_BASE + '/download', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
